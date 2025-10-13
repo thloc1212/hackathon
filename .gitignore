@@ -148,6 +148,9 @@ secrets.json
 *.key
 *.pem
 
+# Database files
+database/
+
 # Build artifacts
 build/
 dist/

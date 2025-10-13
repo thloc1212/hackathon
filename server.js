@@ -4,6 +4,8 @@ import cors from "cors";
 import dotenv from "dotenv";
 import os from "os";
 import { GoogleGenAI, Type } from "@google/genai";
+import bcrypt from "bcryptjs";
+import database from './lib/database.js';
 
 dotenv.config();
 const app = express();
@@ -24,6 +26,239 @@ app.get('/ping', (req, res) => {
 app.post('/parse-test', (req, res) => {
   console.log('[/parse-test] incoming body:', req.body);
   res.json({ ok: true, echo: req.body });
+});
+
+// Authentication Routes
+
+// Sign Up
+app.post('/auth/signup', async (req, res) => {
+  try {
+    const { email, password, dateOfBirth } = req.body;
+
+    // Validate required fields
+    if (!email || !password) {
+      return res.status(400).json({ 
+        error: 'Email and password are required' 
+      });
+    }
+
+    // Check if user already exists
+    const existingUser = await database.findUserByEmail(email);
+    if (existingUser) {
+      return res.status(400).json({ 
+        error: 'User with this email already exists' 
+      });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Create user
+    const newUser = await database.createUser({
+      email,
+      password: hashedPassword,
+      dateOfBirth: dateOfBirth || null
+    });
+
+    // Remove password from response
+    const { password: _, ...userResponse } = newUser;
+
+    res.status(201).json({
+      success: true,
+      message: 'User created successfully',
+      user: userResponse
+    });
+
+  } catch (error) {
+    console.error('Signup error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      detail: error.message 
+    });
+  }
+});
+
+// Sign In
+app.post('/auth/signin', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // Validate required fields
+    if (!email || !password) {
+      return res.status(400).json({ 
+        error: 'Email and password are required' 
+      });
+    }
+
+    // Find user by email
+    const user = await database.findUserByEmail(email);
+    if (!user) {
+      return res.status(401).json({ 
+        error: 'Invalid email or password' 
+      });
+    }
+
+    // Verify password
+    const isValidPassword = await bcrypt.compare(password, user.password);
+    if (!isValidPassword) {
+      return res.status(401).json({ 
+        error: 'Invalid email or password' 
+      });
+    }
+
+    // Create session
+    const sessionExpiry = new Date();
+    sessionExpiry.setDate(sessionExpiry.getDate() + 7); // 7 days
+
+    const session = await database.createSession({
+      userId: user.id,
+      expiresAt: sessionExpiry.toISOString()
+    });
+
+    // Remove password from response
+    const { password: _, ...userResponse } = user;
+
+    res.json({
+      success: true,
+      message: 'Signed in successfully',
+      user: userResponse,
+      session: {
+        id: session.id,
+        expiresAt: session.expiresAt
+      }
+    });
+
+  } catch (error) {
+    console.error('Signin error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      detail: error.message 
+    });
+  }
+});
+
+// Sign Out
+app.post('/auth/signout', async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+
+    if (sessionId) {
+      await database.deleteSession(sessionId);
+    }
+
+    res.json({
+      success: true,
+      message: 'Signed out successfully'
+    });
+
+  } catch (error) {
+    console.error('Signout error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      detail: error.message 
+    });
+  }
+});
+
+// Verify Session (for protected routes)
+app.post('/auth/verify', async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+
+    if (!sessionId) {
+      return res.status(401).json({ 
+        error: 'Session ID required' 
+      });
+    }
+
+    // Find session
+    const session = await database.findSessionById(sessionId);
+    if (!session) {
+      return res.status(401).json({ 
+        error: 'Invalid session' 
+      });
+    }
+
+    // Check if session is expired
+    if (new Date(session.expiresAt) < new Date()) {
+      await database.deleteSession(sessionId);
+      return res.status(401).json({ 
+        error: 'Session expired' 
+      });
+    }
+
+    // Find user
+    const user = await database.findUserById(session.userId);
+    if (!user) {
+      await database.deleteSession(sessionId);
+      return res.status(401).json({ 
+        error: 'User not found' 
+      });
+    }
+
+    // Remove password from response
+    const { password: _, ...userResponse } = user;
+
+    res.json({
+      success: true,
+      user: userResponse,
+      session: {
+        id: session.id,
+        expiresAt: session.expiresAt
+      }
+    });
+
+  } catch (error) {
+    console.error('Verify session error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      detail: error.message 
+    });
+  }
+});
+
+// Get user profile (protected route)
+app.get('/auth/profile', async (req, res) => {
+  try {
+    const sessionId = req.headers.authorization?.replace('Bearer ', '');
+
+    if (!sessionId) {
+      return res.status(401).json({ 
+        error: 'Authorization header required' 
+      });
+    }
+
+    // Verify session
+    const session = await database.findSessionById(sessionId);
+    if (!session || new Date(session.expiresAt) < new Date()) {
+      return res.status(401).json({ 
+        error: 'Invalid or expired session' 
+      });
+    }
+
+    // Find user
+    const user = await database.findUserById(session.userId);
+    if (!user) {
+      return res.status(401).json({ 
+        error: 'User not found' 
+      });
+    }
+
+    // Remove password from response
+    const { password: _, ...userResponse } = user;
+
+    res.json({
+      success: true,
+      user: userResponse
+    });
+
+  } catch (error) {
+    console.error('Profile error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      detail: error.message 
+    });
+  }
 });
 
 // Route chính để parse OCR text hoặc ảnh
@@ -107,7 +342,7 @@ function buildPrompt() {
   return `Extract structured data (merchant, total, items, categories) from the given receipt text or image. Return JSON only.`;
 }
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 const HOST = '0.0.0.0';
 app.listen(PORT, HOST, () => {
   console.log(`Server chạy tại http://localhost:${PORT}`);

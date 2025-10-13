@@ -1,135 +1,634 @@
-import React, { useState } from 'react';
-import { Platform, SafeAreaView, View, Text, TextInput, Pressable, ScrollView, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { 
+  View, 
+  Text, 
+  Pressable, 
+  StyleSheet,
+  Dimensions,
+  Modal,
+  TextInput,
+  Alert 
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Ellipse, Defs, RadialGradient, Stop } from 'react-native-svg';
+import AuthService from '../../lib/authService';
+import RegistrationSuccess from '../../components/RegistrationSuccess';
+import HomeScreen from '../../components/HomeScreen';
 
-// Địa chỉ server Node của bạn (Gemini backend)
-const SERVER_URL =
-  Platform.OS === 'android'
-    ? 'http://10.0.2.2:3000' // Android emulator
-    : 'http://localhost:3000'; // iOS simulator
+const { width, height } = Dimensions.get('window');
 
-export default function GeminiScreen() {
-  const [ocrText, setOcrText] = useState('Highlands Coffee\nLatte 45000\nCookie 25000\nTotal 70000');
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any | null>(null);
-  const [error, setError] = useState('');
+export default function HomePage() {
+  // Authentication state
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [showRegistrationSuccess, setShowRegistrationSuccess] = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState('');
+  
+  // Modal state
+  const [showSignInModal, setShowSignInModal] = useState(false);
+  const [showSignUpModal, setShowSignUpModal] = useState(false);
+  
+  // Form state
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [signUpEmail, setSignUpEmail] = useState('');
+  const [dateOfBirth, setDateOfBirth] = useState('');
+  const [signUpPassword, setSignUpPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  
+  // Error state
+  const [signInError, setSignInError] = useState('');
+  const [signUpError, setSignUpError] = useState('');
+  const [isSignInLoading, setIsSignInLoading] = useState(false);
+  const [isSignUpLoading, setIsSignUpLoading] = useState(false);
 
-  const callGemini = async () => {
-    setLoading(true);
-    setError('');
-    setResult(null);
+  // Check for existing session on app start
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const session = await AuthService.getCurrentUser();
+        if (session) {
+          setCurrentUser(session);
+          setIsAuthenticated(true);
+        }
+      } catch (error) {
+        console.log('No existing session');
+      }
+    };
+    checkSession();
+  }, []);
+
+  const handleSignIn = () => {
+    setSignInError('');
+    setShowSignInModal(true);
+  };
+
+  const handleSignUp = () => {
+    setSignUpError('');
+    setShowSignUpModal(true);
+  };
+
+  const handleCloseSignInModal = () => {
+    setSignInError('');
+    setShowSignInModal(false);
+  };
+
+  const handleCloseSignUpModal = () => {
+    setSignUpError('');
+    setShowSignUpModal(false);
+  };
+
+  const handleRegistrationSuccessContinue = () => {
+    setShowRegistrationSuccess(false);
+    setShowSignInModal(true);
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setCurrentUser(null);
+  };
+
+  const handleSignInSubmit = async () => {
+    setSignInError('');
+    setIsSignInLoading(true);
+    
     try {
-      const url = `${SERVER_URL}/parse`;
-      const body = JSON.stringify({ ocrText });
-      console.log('[client] POST', url, 'body length', body.length);
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body,
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      setResult(data);
-    } catch (err: any) {
-      // Log full error for debugging
-      console.error('[client] fetch error:', err);
-      setError(err?.message ?? String(err));
+      if (!email || !password) {
+        setSignInError('Please fill in all fields');
+        setIsSignInLoading(false);
+        return;
+      }
+
+      const result = await AuthService.signin(email, password);
+      
+      // Set user and navigate to home screen
+      setCurrentUser(result.user);
+      setIsAuthenticated(true);
+      
+      // Clear form and close modal
+      setEmail('');
+      setPassword('');
+      setSignInError('');
+      setShowSignInModal(false);
+      
+    } catch (error) {
+      setSignInError((error as Error).message || 'Failed to sign in');
     } finally {
-      setLoading(false);
+      setIsSignInLoading(false);
     }
   };
 
-  // Connectivity checks
-  const doPing = async () => {
+  const handleSignUpSubmit = async () => {
+    setSignUpError('');
+    setIsSignUpLoading(true);
+    
     try {
-      const res = await fetch(`${SERVER_URL}/ping`);
-      const json = await res.json();
-      console.log('[client] ping response', json);
-      alert(`ping ok: ${json.ok}`);
-    } catch (err) {
-      console.error('[client] ping error', err);
-      alert(`ping error: ${err}`);
+      if (!signUpEmail || !signUpPassword || !confirmPassword) {
+        setSignUpError('Please fill in all fields');
+        setIsSignUpLoading(false);
+        return;
+      }
+
+      if (signUpPassword !== confirmPassword) {
+        setSignUpError('Passwords do not match');
+        setIsSignUpLoading(false);
+        return;
+      }
+
+      if (signUpPassword.length < 6) {
+        setSignUpError('Password must be at least 6 characters long');
+        setIsSignUpLoading(false);
+        return;
+      }
+
+      const result = await AuthService.signup(signUpEmail, signUpPassword, dateOfBirth);
+      
+      // Store registered email and show success screen
+      setRegisteredEmail(signUpEmail);
+      
+      // Clear form and close modal
+      setSignUpEmail('');
+      setDateOfBirth('');
+      setSignUpPassword('');
+      setConfirmPassword('');
+      setSignUpError('');
+      setShowSignUpModal(false);
+      
+      // Show registration success screen
+      setShowRegistrationSuccess(true);
+      
+    } catch (error) {
+      setSignUpError((error as Error).message || 'Failed to create account');
+    } finally {
+      setIsSignUpLoading(false);
     }
   };
 
-  const doParseTest = async () => {
-    try {
-      const url = `${SERVER_URL}/parse-test`;
-      const body = JSON.stringify({ test: true, sample: 'abc' });
-      console.log('[client] POST', url, 'body', body);
-      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
-      const json = await res.json();
-      console.log('[client] parse-test response', json);
-      alert(`parse-test ok: ${JSON.stringify(json)}`);
-    } catch (err) {
-      console.error('[client] parse-test error', err);
-      alert(`parse-test error: ${err}`);
-    }
-  };
+  // Show registration success screen
+  if (showRegistrationSuccess) {
+    return (
+      <RegistrationSuccess 
+        onContinue={handleRegistrationSuccessContinue}
+        userEmail={registeredEmail}
+      />
+    );
+  }
 
+  // Show home screen if authenticated
+  if (isAuthenticated && currentUser) {
+    return (
+      <HomeScreen 
+        user={currentUser}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  // Show landing page with auth modals
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#f9fafb' }}>
-      <View style={{ flex: 1, padding: 20 }}>
-        <Text style={{ fontSize: 22, fontWeight: 'bold', marginBottom: 10 }}>🧾 Gemini Local Demo (Expo)</Text>
-        <Text style={{ color: '#555' }}>Nhập OCR text → gửi tới server Gemini → hiển thị JSON</Text>
-
-        <TextInput
-          multiline
-          value={ocrText}
-          onChangeText={setOcrText}
-          style={{
-            marginTop: 16,
-            borderColor: '#ccc',
-            borderWidth: 1,
-            borderRadius: 10,
-            padding: 12,
-            backgroundColor: '#fff',
-            minHeight: 120,
-            textAlignVertical: 'top',
-          }}
-        />
-
-        <Pressable
-          onPress={callGemini}
-          style={{
-            backgroundColor: '#111827',
-            paddingVertical: 12,
-            borderRadius: 10,
-            marginTop: 10,
-            alignItems: 'center',
-          }}
+    <LinearGradient
+      colors={['#B9B4FF', '#524BBF']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 0, y: 1 }}
+      style={styles.container}
+    >
+      {/* Background Decorative Elements */}
+      <View style={[styles.decorativeCircle1, { overflow: 'visible' }]}> 
+        <Svg
+          width={228.59}
+          height={227.91}
+          style={{ position: 'absolute', left: 0, top: 0, opacity: 0.7, transform: [{ rotate: '30deg' }] }}
         >
-          <Text style={{ color: 'white', fontWeight: '600' }}>
-            {loading ? 'Đang gửi...' : 'Gửi tới Gemini'}
-          </Text>
-        </Pressable>
-
-        <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-          <Pressable onPress={doPing} style={{ padding: 8, backgroundColor: '#0ea5e9', borderRadius: 8 }}>
-            <Text style={{ color: 'white' }}>Ping server</Text>
-          </Pressable>
-          <Pressable onPress={doParseTest} style={{ padding: 8, backgroundColor: '#10b981', borderRadius: 8 }}>
-            <Text style={{ color: 'white' }}>Parse-test</Text>
-          </Pressable>
-        </View>
-
-        {loading && <ActivityIndicator style={{ marginTop: 20 }} size="large" />}
-
-        {error ? <Text style={{ color: 'red', marginTop: 20 }}>Lỗi: {error}</Text> : null}
-
-        {result && (
-          <ScrollView style={{ marginTop: 20, backgroundColor: '#111827', borderRadius: 8 }}>
-            <Text
-              style={{
-                color: '#e5e7eb',
-                padding: 10,
-                fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-              }}
+          <Defs>
+            <RadialGradient
+              id="grad"
+              cx="27.44%"
+              cy="41.04%"
+              rx="70.18%"
+              ry="69.66%"
+              fx="27.44%"
+              fy="41.04%"
             >
-              {JSON.stringify(result, null, 2)}
-            </Text>
-          </ScrollView>
-        )}
+              <Stop offset="0" stopColor="#7870DD" stopOpacity="1" />
+              <Stop offset="1" stopColor="#241E78" stopOpacity="1" />
+            </RadialGradient>
+          </Defs>
+          <Ellipse
+            cx={114.296}
+            cy={113.953}
+            rx={114.296}
+            ry={113.953}
+            fill="url(#grad)"
+          />
+        </Svg>
       </View>
-    </SafeAreaView>
+      <LinearGradient
+          colors={['rgba(119.51, 112.24, 221.29, 0)', 'rgba(82.43, 74.70, 190.64, 0.40)']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.decorativeCircle2, { opacity: 0.4 }]}
+        />
+      <View style={[styles.decorativeCircle3, { overflow: 'visible' }]}> 
+        <Svg
+          width={88.81}
+          height={88.55}
+          style={{ position: 'absolute', left: 0, top: 0, opacity: 0.95, transform: [{ rotate: '-30.04deg' }] }}
+        >
+          <Defs>
+            <RadialGradient
+              id="grad3"
+              cx="27.44%"
+              cy="41.04%"
+              rx="70.18%"
+              ry="69.66%"
+              fx="27.44%"
+              fy="41.04%"
+            >
+              <Stop offset="0" stopColor="#7870DD" stopOpacity="1" />
+              <Stop offset="1" stopColor="#241E78" stopOpacity="1" />
+            </RadialGradient>
+          </Defs>
+          <Ellipse
+            cx={44.4069}
+            cy={44.2736}
+            rx={44.4069}
+            ry={44.2736}
+            fill="url(#grad3)"
+          />
+        </Svg>
+      </View>
+      
+      {/* Main Content */}
+      <View style={styles.content}>
+        <Text style={styles.welcomeText}>Welcome Back!</Text>
+        <Text style={styles.subtitleText}>
+          "Your daily spending, transformed into{'\n'}meaningful insights with AI."
+        </Text>
+      </View>
+      
+      {/* Authentication Buttons */}
+      <View style={styles.authButtonsContainer}>
+        <Pressable style={styles.signInButton} onPress={handleSignIn}>
+          <Text style={styles.signInText}>Sign In</Text>
+        </Pressable>
+        <Pressable style={styles.signUpButton} onPress={handleSignUp}>
+          <Text style={styles.signUpText}>Sign Up</Text>
+        </Pressable>
+      </View>
+
+      {/* Sign In Modal */}
+      <Modal
+        visible={showSignInModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={handleCloseSignInModal}
+      >
+        <Pressable style={styles.modalOverlay} onPress={handleCloseSignInModal}>
+          <Pressable style={styles.modalContainer} onPress={(e) => e.stopPropagation()}>
+            {/* Modal Content */}
+            <View style={styles.signInCard}>
+              <Text style={styles.signInTitle}>Sign in</Text>
+              
+              {/* Email Input */}
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Email</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={email}
+                  onChangeText={setEmail}
+                  placeholder=""
+                  keyboardType="email-address"
+                />
+              </View>
+
+              {/* Password Input */}
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Password</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder=""
+                  secureTextEntry={true}
+                />
+              </View>
+
+              {/* Forgot Password */}
+              <Pressable style={styles.forgotPasswordContainer}>
+                <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+              </Pressable>
+
+              {/* Error Message */}
+              {signInError ? (
+                <View style={styles.errorContainer}>
+                  <Text style={styles.errorText}>{signInError}</Text>
+                </View>
+              ) : null}
+
+              {/* Sign In Button */}
+              <Pressable 
+                style={[styles.signInModalButton, isSignInLoading && styles.buttonDisabled]} 
+                onPress={handleSignInSubmit}
+                disabled={isSignInLoading}
+              >
+                <Text style={styles.signInModalButtonText}>
+                  {isSignInLoading ? 'Signing in...' : 'Sign in'}
+                </Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Sign Up Modal */}
+      <Modal
+        visible={showSignUpModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={handleCloseSignUpModal}
+      >
+        <Pressable style={styles.modalOverlay} onPress={handleCloseSignUpModal}>
+          <Pressable style={styles.modalContainer} onPress={(e) => e.stopPropagation()}>
+            {/* Modal Content */}
+            <View style={styles.signInCard}>
+              <Text style={styles.signInTitle}>Sign Up</Text>
+              
+              {/* Email Input */}
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Email</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={signUpEmail}
+                  onChangeText={setSignUpEmail}
+                  placeholder=""
+                  keyboardType="email-address"
+                />
+              </View>
+
+              {/* Date of Birth Input */}
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Date of birth</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={dateOfBirth}
+                  onChangeText={setDateOfBirth}
+                  placeholder=""
+                />
+              </View>
+
+              {/* Password Input */}
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Password</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={signUpPassword}
+                  onChangeText={setSignUpPassword}
+                  placeholder=""
+                  secureTextEntry={true}
+                />
+              </View>
+
+              {/* Confirm Password Input */}
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Confirm Password</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  placeholder=""
+                  secureTextEntry={true}
+                />
+              </View>
+
+              {/* Error Message */}
+              {signUpError ? (
+                <View style={styles.errorContainer}>
+                  <Text style={styles.errorText}>{signUpError}</Text>
+                </View>
+              ) : null}
+
+              {/* Sign Up Button */}
+              <Pressable 
+                style={[styles.signInModalButton, isSignUpLoading && styles.buttonDisabled]} 
+                onPress={handleSignUpSubmit}
+                disabled={isSignUpLoading}
+              >
+                <Text style={styles.signInModalButtonText}>
+                  {isSignUpLoading ? 'Creating account...' : 'Sign up'}
+                </Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </LinearGradient>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    width: '100%',
+    height: '100%',
+    position: 'relative',
+    overflow: 'hidden',
+    flex: 1,
+  },
+  decorativeCircle1: {
+    width: 228.59,
+    height: 227.91,
+    left: 302.10,
+    top: -114,
+    position: 'absolute',
+    transform: [{ rotate: '30deg' }],
+    backgroundColor: 'rgba(119.51, 112.24, 221.29, 0.70)',
+    borderRadius: 9999,
+  },
+  decorativeCircle2: {
+    width: 463.14,
+    height: 453.93,
+    left: -204,
+    top: -71,
+    position: 'absolute',
+    transform: [{ rotate: '-14.07deg' }],
+    borderRadius: 9999,
+  },
+  decorativeCircle3: {
+    width: 88.81,
+    height: 88.55,
+    left: 314,
+    top: 77,
+    position: 'absolute',
+    borderRadius: 9999,
+  },
+  content: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  welcomeText: {
+    position: 'absolute',
+    left: 90,
+    top: 363,
+    color: '#0B1179',
+    fontSize: 30,
+    fontFamily: 'Be Vietnam Pro',
+    fontWeight: '600',
+    flexWrap: 'wrap',
+    wordWrap: 'break-word',
+  },
+  subtitleText: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    left: 0,
+    top: 414,
+    textAlign: 'center',
+    color: 'white',
+    fontSize: 13,
+    fontFamily: 'Be Vietnam Pro',
+    fontStyle: 'italic',
+    fontWeight: '500',
+    flexWrap: 'wrap',
+    wordWrap: 'break-word',
+  },
+  authButtonsContainer: {
+    position: 'absolute',
+    bottom: 50,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    gap: 20,
+  },
+  signInButton: {
+    width: 255.50,
+    height: 60,
+    backgroundColor: '#241E78',
+    borderRadius: 45,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  signUpButton: {
+    width: 255.50,
+    height: 60,
+    backgroundColor: '#D9D9D9',
+    borderRadius: 45,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  signInText: {
+    color: 'white',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  signUpText: {
+    color: '#241E78',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'transparent',
+    justifyContent: 'flex-end',
+  },
+  modalContainer: {
+    backgroundColor: '#F9F5FF',
+    borderTopLeftRadius: 53,
+    borderTopRightRadius: 53,
+    marginTop: height * 0.3,
+    minHeight: height * 0.7,
+  },
+  backButton: {
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    zIndex: 1,
+  },
+  backButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  signInCard: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 60,
+  },
+  signInTitle: {
+    textAlign: 'center',
+    color: '#241E78',
+    fontSize: 26,
+    fontFamily: 'Be Vietnam Pro',
+    fontWeight: '600',
+    marginBottom: 40,
+  },
+  inputContainer: {
+    width: '100%',
+    position: 'relative',
+    marginBottom: 30,
+  },
+  inputLabel: {
+    position: 'absolute',
+    left: 6,
+    top: 0,
+    color: '#241E78',
+    fontSize: 15,
+    fontFamily: 'Be Vietnam Pro',
+    fontWeight: '600',
+  },
+  textInput: {
+    width: '100%',
+    height: 46,
+    marginTop: 30,
+    backgroundColor: '#EBE7ED',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    fontSize: 16,
+  },
+  forgotPasswordContainer: {
+    alignItems: 'center',
+    marginBottom: 40,
+    marginTop: 20,
+  },
+  forgotPasswordText: {
+    textAlign: 'center',
+    color: '#241E78',
+    fontSize: 12,
+    fontFamily: 'Be Vietnam Pro',
+    fontWeight: '600',
+  },
+  signInModalButton: {
+    width: '100%',
+    height: 50,
+    backgroundColor: '#241E78',
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  signInModalButtonText: {
+    textAlign: 'center',
+    color: '#D5D2FF',
+    fontSize: 17,
+    fontFamily: 'Be Vietnam Pro',
+    fontWeight: '600',
+  },
+  errorContainer: {
+    backgroundColor: '#FFE5E5',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#FF6B6B',
+  },
+  errorText: {
+    color: '#D32F2F',
+    fontSize: 14,
+    fontFamily: 'Be Vietnam Pro',
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+});
