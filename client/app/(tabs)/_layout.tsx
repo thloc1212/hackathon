@@ -6,9 +6,10 @@ export default function RootLayout() {
 		<Tabs
 			tabBar={(props) => <CustomTabBar {...props} />}
 			screenOptions={{
-				tabBarActiveTintColor: '#ff00c3',
+				tabBarActiveTintColor: '#5F58C2',
 				tabBarInactiveTintColor: '#727272',
 				headerShown: false,
+				tabBarStyle: { backgroundColor: '#F0F3F8', position: 'absolute', borderTopWidth: 0, elevation: 0 },
 			}}
 		>
 			<Tabs.Screen
@@ -16,6 +17,14 @@ export default function RootLayout() {
 				options={{
 					title: 'Home',
 					tabBarLabel: 'Home',
+				}}
+			/>
+
+			<Tabs.Screen
+				name="menu"
+				options={{
+					title: 'Menu',
+					tabBarLabel: 'Menu',
 				}}
 			/>
 
@@ -28,10 +37,10 @@ export default function RootLayout() {
 			/>
 
 			<Tabs.Screen
-				name="explore"
+				name="statistic"
 				options={{
-					title: 'Explore',
-					tabBarLabel: 'Explore',
+					title: 'Statistics',
+					tabBarLabel: 'Statistics',
 				}}
 			/>
 
