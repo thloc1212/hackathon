@@ -10,44 +10,55 @@ const tintColorDark = '#fff';
 
 export const Colors = {
   light: {
-    text: '#11181C',
-    background: '#fff',
-    tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: tintColorLight,
+    text: '#1f2937',        // Dark gray for good readability
+    background: '#ffffff',   // Pure white background
+    tint: '#3b82f6',        // Bright blue for accent color
+    icon: '#6b7280',        // Medium gray for icons
+    tabIconDefault: '#9ca3af', // Light gray for inactive tabs
+    tabIconSelected: '#3b82f6', // Bright blue for selected tabs
   },
   dark: {
-    text: '#ECEDEE',
-    background: '#151718',
-    tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: tintColorDark,
+    text: '#1f2937',        // Same as light - all light colors now
+    background: '#ffffff',   // White background
+    tint: '#3b82f6',        // Bright blue
+    icon: '#6b7280',        // Medium gray
+    tabIconDefault: '#9ca3af', // Light gray
+    tabIconSelected: '#3b82f6', // Bright blue
   },
 };
+
+// Import FontFamily and FontWeight from fonts.ts
+import { FontFamily, FontWeight } from './fonts';
+
+export { FontFamily, FontWeight };
 
 export const Fonts = Platform.select({
   ios: {
     /** iOS `UIFontDescriptorSystemDesignDefault` */
-    sans: 'system-ui',
+    sans: FontFamily.regular,
     /** iOS `UIFontDescriptorSystemDesignSerif` */
     serif: 'ui-serif',
     /** iOS `UIFontDescriptorSystemDesignRounded` */
-    rounded: 'ui-rounded',
+    rounded: FontFamily.regular,
     /** iOS `UIFontDescriptorSystemDesignMonospaced` */
     mono: 'ui-monospace',
   },
-  default: {
-    sans: 'normal',
+  android: {
+    sans: FontFamily.regular,
     serif: 'serif',
-    rounded: 'normal',
+    rounded: FontFamily.regular,
+    mono: 'monospace',
+  },
+  default: {
+    sans: FontFamily.regular,
+    serif: 'serif',
+    rounded: FontFamily.regular,
     mono: 'monospace',
   },
   web: {
-    sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+    sans: `${FontFamily.regular}, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif`,
     serif: "Georgia, 'Times New Roman', serif",
-    rounded: "'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif",
+    rounded: `${FontFamily.regular}, 'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif`,
     mono: "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
   },
 });

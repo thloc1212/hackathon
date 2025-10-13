@@ -17,6 +17,7 @@ export default function RootLayout() {
 				options={{
 					title: 'Home',
 					tabBarLabel: 'Home',
+					
 				}}
 			/>
 
