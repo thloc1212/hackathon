@@ -90,6 +90,7 @@ jspm_packages/
 .expo/
 dist/
 web-build/
+expo-env.d.ts
 
 # Expo development builds
 expo-development-build/
