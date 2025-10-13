@@ -1,0 +1,9 @@
+{
+  "totalBudget": 1000000,
+  "categories": [
+    { "id": "1", "name": "Ăn Uống", "budget": 200000, "spent": 150000, "color": "#FF6B6B" },
+    { "id": "2", "name": "Di Chuyển", "budget": 200000, "spent": 80000, "color": "#4ECDC4" },
+    { "id": "3", "name": "Mua Sắm", "budget": 200000, "spent": 120000, "color": "#45B7D1" },
+    { "id": "4", "name": "Giải Trí", "budget": 200000, "spent": 90000, "color": "#96CEB4" }
+  ]
+}

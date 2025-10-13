@@ -1,0 +1,832 @@
+import { Platform, StyleSheet, View, Pressable, ScrollView, TextInput, Modal, TouchableOpacity, Alert } from 'react-native';
+import { useMemo, useState, useCallback } from 'react';
+import Svg, { Path, G } from 'react-native-svg';
+
+import { ThemedText } from '@/components/themed-text';
+import { ThemedView } from '@/components/themed-view';
+import { IconSymbol } from '@/components/ui/icon-symbol';
+
+// Hàm chuyển đổi độ sang radian
+const polarToCartesian = (centerX: number, centerY: number, radius: number, angleInDegrees: number) => {
+  const angleInRadians = (angleInDegrees - 90) * Math.PI / 180.0;
+  return {
+    x: centerX + (radius * Math.cos(angleInRadians)),
+    y: centerY + (radius * Math.sin(angleInRadians))
+  };
+};
+
+// Hàm tạo đường dẫn SVG cho cung tròn
+const describeArc = (x: number, y: number, radius: number, startAngle: number, endAngle: number) => {
+  const start = polarToCartesian(x, y, radius, endAngle);
+  const end = polarToCartesian(x, y, radius, startAngle);
+  const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
+  
+  return [
+    "M", start.x, start.y,
+    "A", radius, radius, 0, largeArcFlag, 0, end.x, end.y
+  ].join(" ");
+};
+
+const COLORS = [
+  '#FF6B6B', // Red
+  '#4ECDC4', // Teal
+  '#45B7D1', // Blue
+  '#96CEB4', // Green
+  '#FFEEAD', // Yellow
+  '#D4A5A5', // Pink
+  '#9B89B3', // Purple
+  '#E9967A', // Peach
+];
+
+type SpendingCategory = {
+  id: string;
+  name: string;
+  budget: number;
+  spent: number;
+  color: string;
+  deleted?: boolean;
+};
+
+type SpendingData = {
+  totalBudget: number;
+  categories: SpendingCategory[];
+};
+
+const BudgetProgress = ({ categories }: { categories: SpendingCategory[] }) => {
+  // Tính toán các segment dựa trên tỷ lệ chi tiêu
+  const calculateSegments = (cats: SpendingCategory[]) => {
+    const totalSpent = cats.reduce((sum, cat) => sum + cat.spent, 0);
+    let currentAngle = -90; // Bắt đầu từ trên cùng
+    
+    // Nếu chỉ có 1 category có chi tiêu > 0
+    const spendingCategories = cats.filter(cat => cat.spent > 0);
+    if (spendingCategories.length === 1) {
+      return cats.map(cat => {
+        if (cat.spent > 0) {
+          return {
+            ...cat,
+            startAngle: -90,
+            segmentAngle: 360,
+            spentPercentage: 100
+          };
+        }
+        return {
+          ...cat,
+          startAngle: -90,
+          segmentAngle: 0,
+          spentPercentage: 0
+        };
+      });
+    }
+    
+    // Xử lý bình thường cho nhiều categories
+    return cats.map(cat => {
+      const spentPercentage = totalSpent > 0 ? (cat.spent / totalSpent) * 100 : 0;
+      const segmentAngle = (spentPercentage / 100) * 360;
+      const startAngle = currentAngle;
+      
+      currentAngle += segmentAngle;
+      
+      return {
+        ...cat,
+        startAngle,
+        segmentAngle,
+        spentPercentage
+      };
+    });
+  };
+
+  // Sắp xếp categories theo % đã chi từ cao xuống thấp và tính toán góc
+  const sortedCategories = calculateSegments([...categories].sort((a, b) => {
+    const percentA = (a.spent / a.budget) * 100;
+    const percentB = (b.spent / b.budget) * 100;
+    return percentB - percentA;
+  }));
+
+  // Tổng budget và spent
+  const totalBudget = categories.reduce((sum, cat) => sum + cat.budget, 0);
+  const totalSpent = categories.reduce((sum, cat) => sum + cat.spent, 0);
+  const totalPercentage = Math.round((totalSpent / totalBudget) * 100);
+
+  const radius = 80; // Bán kính vòng tròn
+  const strokeWidth = 20; // Độ dày của vòng tròn
+  const normalizedRadius = radius - strokeWidth / 2;
+  const circumference = 2 * Math.PI * normalizedRadius;
+
+  const formatCurrency = (amount: number) => {
+    return amount.toLocaleString("vi-VN"); 
+  };
+
+  return (
+    <View style={styles.progressContainer}>
+      <View style={styles.totalContainer}>
+        <View style={styles.totalContent}>
+          <View style={styles.totalItem}>
+            <IconSymbol name="creditcard" size={24} color="#6B4EFF" />
+            <View style={styles.totalTextContainer}>
+              <ThemedText style={styles.totalLabel}>Tổng ngân sách</ThemedText>
+              <ThemedText style={styles.totalValue}>{formatCurrency(totalBudget)}đ</ThemedText>
+            </View>
+          </View>
+          <View style={styles.totalProgressContainer}>
+            <View style={styles.totalProgressBar}>
+              <View style={[styles.totalProgressFill, { width: `${Math.min(totalPercentage, 100)}%` }]} />
+            </View>
+            <ThemedText style={styles.totalPercent}>{totalPercentage}%</ThemedText>
+          </View>
+          <View style={styles.totalSubItems}>
+            <View style={styles.totalSubItem}>
+              <View style={[styles.totalDot, { backgroundColor: '#FF6B6B' }]} />
+              <ThemedText style={styles.totalSubLabel}>Đã chi</ThemedText>
+              <ThemedText style={[styles.totalSubValue, { color: '#FF6B6B' }]}>{formatCurrency(totalSpent)}đ</ThemedText>
+            </View>
+            <View style={[styles.totalDivider, { width: 1, height: 24 }]} />
+            <View style={styles.totalSubItem}>
+              <View style={[styles.totalDot, { backgroundColor: '#4ECDC4' }]} />
+              <ThemedText style={styles.totalSubLabel}>Còn lại</ThemedText>
+              <ThemedText style={[styles.totalSubValue, { color: '#4ECDC4' }]}>{formatCurrency(totalBudget - totalSpent)}đ</ThemedText>
+            </View>
+          </View>
+        </View>
+      </View>
+      <View style={styles.progressCircle}>
+        <Svg height={radius * 2} width={radius * 2} style={StyleSheet.absoluteFill}>
+          {/* Vẽ các phần chi tiêu */}
+          {sortedCategories.map((category, index) => {
+            const { startAngle, segmentAngle } = category;
+            
+            // Tạo đường dẫn cho phần hình pie
+            const startPoint = polarToCartesian(radius, radius, radius, startAngle);
+            const endPoint = polarToCartesian(radius, radius, radius, startAngle + segmentAngle);
+            const largeArcFlag = segmentAngle <= 180 ? "0" : "1";
+            
+            const pathData = [
+              "M", radius, radius, // Di chuyển đến tâm
+              "L", startPoint.x, startPoint.y, // Vẽ line từ tâm đến điểm bắt đầu
+              "A", radius, radius, 0, largeArcFlag, 1, endPoint.x, endPoint.y, // Vẽ cung tròn
+              "Z" // Đóng path bằng cách nối về tâm
+            ].join(" ");
+            
+            return (
+              <Path
+                key={category.id}
+                d={pathData}
+                fill={category.color}
+                opacity={0.8}
+              />
+            );
+          })}
+        </Svg>
+
+      </View>
+    </View>
+  );
+};
+
+const CategoryModal = ({ 
+  visible, 
+  onClose, 
+  onSave, 
+  initialData 
+}: { 
+  visible: boolean; 
+  onClose: () => void; 
+  onSave: (data: Omit<SpendingCategory, 'id'>) => void;
+  initialData: SpendingCategory;
+}) => {
+  const [spent, setSpent] = useState(initialData.spent.toString());
+  const [budget, setBudget] = useState(initialData.budget.toString());
+  const [selectedColor, setSelectedColor] = useState(initialData.color);
+
+  useEffect(() => {
+    if (visible) {
+      setSpent(initialData.spent.toString());
+      setBudget(initialData.budget.toString());
+      setSelectedColor(initialData.color);
+    }
+  }, [visible, initialData]);
+
+  const handleSave = () => {
+    onSave({
+      ...initialData,
+      spent: parseInt(spent, 10) || 0,
+      budget: parseInt(budget, 10) || 0,
+      color: selectedColor,
+    });
+    onClose();
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalOverlay}>
+        <ThemedView style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <ThemedText style={styles.modalTitle}>Cập nhật chi tiêu</ThemedText>
+          </View>
+          
+          <View style={styles.categoryInfo}>
+            <ThemedText style={styles.categoryName}>{initialData.name}</ThemedText>
+          </View>
+
+          <View style={styles.inputContainer}>
+            <ThemedText style={styles.inputLabel}>Ngân sách</ThemedText>
+            <TextInput
+              style={styles.input}
+              value={budget}
+              onChangeText={setBudget}
+              keyboardType="numeric"
+              placeholder="Nhập ngân sách"
+            />
+          </View>
+
+          <View style={styles.inputContainer}>
+            <ThemedText style={styles.inputLabel}>Số tiền đã chi</ThemedText>
+            <TextInput
+              style={styles.input}
+              value={spent}
+              onChangeText={setSpent}
+              keyboardType="numeric"
+              placeholder="Nhập số tiền đã chi"
+            />
+          </View>
+
+          <View style={styles.inputContainer}>
+            <ThemedText style={styles.inputLabel}>Màu sắc</ThemedText>
+            <View style={styles.colorPicker}>
+              {COLORS.map((color) => (
+                <Pressable
+                  key={color}
+                  style={[
+                    styles.colorOption,
+                    { backgroundColor: color },
+                    selectedColor === color && styles.selectedColor,
+                  ]}
+                  onPress={() => setSelectedColor(color)}
+                />
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.modalButtons}>
+            <Pressable style={styles.cancelButton} onPress={onClose}>
+              <ThemedText style={styles.buttonText}>Huỷ</ThemedText>
+            </Pressable>
+            <Pressable style={styles.saveButton} onPress={handleSave}>
+              <ThemedText style={[styles.buttonText, { color: '#FFF' }]}>Lưu</ThemedText>
+            </Pressable>
+          </View>
+        </ThemedView>
+      </View>
+    </Modal>
+  );
+};
+
+const SpendingCard = ({ 
+  category,
+  onEdit
+}: { 
+  category: SpendingCategory;
+  onEdit: (category: SpendingCategory) => void;
+}) => {
+  const percentage = Math.min((category.spent / category.budget) * 100, 100);
+  
+  return (
+    <Pressable 
+      style={[styles.categoryCard, { backgroundColor: category.color + '20' }]}
+      onPress={() => onEdit(category)}
+    >
+      <View style={styles.categoryHeader}>
+        <ThemedText style={styles.categoryTitle}>{category.name}</ThemedText>
+        <ThemedText style={styles.budgetAmount}>{category.budget.toLocaleString()}đ</ThemedText>
+      </View>
+      <ThemedText style={styles.categoryAmount}>
+        {category.spent.toLocaleString()}đ/{category.budget.toLocaleString()}đ
+      </ThemedText>
+      <View style={styles.progressBar}>
+        <View style={[styles.progressFill, { width: `${Math.min(percentage, 100)}%`, backgroundColor: category.color }]} />
+      </View>
+    </Pressable>
+  );
+};
+
+export default function CategoriesScreen() {
+  const defaultCategories = [
+    { id: '1', name: 'Ăn Uống', budget: 200000, spent: 150000, color: COLORS[0] },
+    { id: '2', name: 'Di Chuyển', budget: 200000, spent: 80000, color: COLORS[1] },
+    { id: '3', name: 'Mua Sắm', budget: 200000, spent: 120000, color: COLORS[2] },
+    { id: '4', name: 'Giải Trí', budget: 200000, spent: 90000, color: COLORS[3] },
+  ];
+
+  const defaultBudget = defaultCategories.reduce((sum, cat) => sum + cat.budget, 0);
+
+  const [spendingData, setSpendingData] = useState<SpendingData>({
+    totalBudget: defaultBudget,
+    categories: defaultCategories,
+  });
+  const [modalVisible, setModalVisible] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<SpendingCategory>(defaultCategories[0]);
+
+  const updateTotalBudget = useCallback((categories: SpendingCategory[]) => {
+    const total = categories.reduce((acc, cat) => acc + cat.budget, 0);
+    return total;
+  }, []);
+
+  const handleAddCategory = (categoryData: Omit<SpendingCategory, 'id'>) => {
+    const newCategory = {
+      ...categoryData,
+      id: Date.now().toString(),
+    };
+
+    setSpendingData(prev => {
+      const newCategories = [...prev.categories, newCategory];
+      return {
+        categories: newCategories,
+        totalBudget: updateTotalBudget(newCategories),
+      };
+    });
+  };
+
+  const handleEditCategory = (categoryData: Omit<SpendingCategory, 'id'>) => {
+    if (!editingCategory) return;
+
+    if (categoryData.deleted) {
+      handleDeleteCategory(editingCategory.id);
+    } else {
+      setSpendingData(prev => {
+        const newCategories = prev.categories.map(cat =>
+          cat.id === editingCategory.id
+            ? { ...cat, ...categoryData }
+            : cat
+        );
+        return {
+          categories: newCategories,
+          totalBudget: updateTotalBudget(newCategories),
+        };
+      });
+    }
+  };
+
+  const handleDeleteCategory = (id: string) => {
+    Alert.alert(
+      "Xác nhận xóa",
+      "Bạn có chắc muốn xóa danh mục này?",
+      [
+        {
+          text: "Hủy",
+          style: "cancel"
+        },
+        {
+          text: "Xóa",
+          style: "destructive",
+          onPress: () => {
+            setSpendingData(prev => {
+              const newCategories = prev.categories.filter(cat => cat.id !== id);
+              return {
+                categories: newCategories,
+                totalBudget: updateTotalBudget(newCategories),
+              };
+            });
+          }
+        }
+      ]
+    );
+  };
+
+  const totalSpent = useMemo(() => {
+    return spendingData.categories.reduce((acc, cat) => acc + cat.spent, 0);
+  }, [spendingData.categories]);
+
+  const spentPercentage = (totalSpent / spendingData.totalBudget) * 100;
+
+  const openEditModal = (category: SpendingCategory) => {
+    setEditingCategory(category);
+    setModalVisible(true);
+  };
+
+  const handleEditSpent = (categoryData: Omit<SpendingCategory, 'id'>) => {
+    setSpendingData(prev => ({
+      ...prev,
+      categories: prev.categories.map(cat => 
+        cat.id === editingCategory.id
+          ? { 
+              ...cat, 
+              spent: categoryData.spent,
+              budget: categoryData.budget,
+              color: categoryData.color
+            }
+          : cat
+      )
+    }));
+  };
+
+  return (
+    <ThemedView style={styles.container}>
+      <View style={styles.header}>
+        <View style={styles.headerContent}>
+          <ThemedText style={styles.title}>Danh Mục</ThemedText>
+        </View>
+      </View>
+      
+      <ScrollView style={styles.content}>
+        <BudgetProgress categories={spendingData.categories} />
+        
+        <View style={styles.categoriesContainer}>
+          {spendingData.categories.map(category => (
+            <SpendingCard
+              key={category.id}
+              category={category}
+              onEdit={openEditModal}
+            />
+          ))}
+        </View>
+      </ScrollView>
+
+      <CategoryModal
+        visible={modalVisible}
+        onClose={() => setModalVisible(false)}
+        onSave={handleEditSpent}
+        initialData={editingCategory}
+      />
+    </ThemedView>
+  );
+}
+
+import { useEffect } from 'react';
+
+const styles = StyleSheet.create({
+  categoryInfo: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  categoryName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  categoryBudget: {
+    fontSize: 14,
+    color: '#666',
+  },
+  budgetAmount: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#666',
+  },
+  totalContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  totalContent: {
+    gap: 16,
+  },
+  totalItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  totalTextContainer: {
+    flex: 1,
+  },
+  totalLabel: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 4,
+  },
+  totalValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#6B4EFF',
+  },
+  totalProgressContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  totalProgressBar: {
+    flex: 1,
+    height: 8,
+    backgroundColor: '#F0F0F0',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  totalProgressFill: {
+    height: '100%',
+    backgroundColor: '#6B4EFF',
+    borderRadius: 4,
+  },
+  totalPercent: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6B4EFF',
+    minWidth: 45,
+  },
+  totalSubItems: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  totalSubItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  totalDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  totalSubLabel: {
+    fontSize: 14,
+    color: '#666',
+  },
+  totalSubValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 'auto',
+  },
+  totalDivider: {
+    backgroundColor: '#E5E5E5',
+    marginHorizontal: 16,
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  deleteButton: {
+    backgroundColor: '#FF6B6B',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  deleteButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  budgetSummary: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    marginBottom: 20,
+  },
+  budgetItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  budgetLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 4,
+  },
+  budgetValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  budgetDivider: {
+    width: 1,
+    height: '70%',
+    backgroundColor: '#E5E5E5',
+    marginHorizontal: 10,
+  },
+  headerContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 16,
+  },
+  clearButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FF6B6B',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  clearButtonText: {
+    color: '#fff',
+    marginLeft: 8,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  totalBudget: {
+    fontSize: 18,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  progressRings: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+
+  container: {
+    flex: 1,
+    padding: 16,
+  },
+  header: {
+    marginBottom: 24,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  content: {
+    flex: 1,
+  },
+  progressContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 32,
+    marginBottom: 24,
+  },
+  progressCircle: {
+    width: 160,
+    height: 160,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  progressTextContainer: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  progressText: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#6B4EFF',
+  },
+  progressLabel: {
+    fontSize: 14,
+    color: '#666',
+  },
+  categoriesContainer: {
+    gap: 16,
+    paddingBottom: 80, // Space for FAB
+  },
+  categoryCard: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    padding: 16,
+    gap: 12,
+  },
+  categoryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  categoryActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  actionButton: {
+    padding: 8,
+  },
+  categoryTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  categoryAmount: {
+    fontSize: 14,
+    color: '#666',
+  },
+  progressBar: {
+    height: 8,
+    backgroundColor: '#E8E8E8',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#6B4EFF',
+    borderRadius: 4,
+  },
+  footer: {
+    position: 'absolute',
+    bottom: 24,
+    right: 24,
+  },
+  addButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#6B4EFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    padding: 20,
+    gap: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  inputContainer: {
+    gap: 8,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#DDD',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: '#F5F5F5',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  saveButton: {
+    flex: 1,
+    backgroundColor: '#6B4EFF',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  buttonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  colorPicker: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    padding: 8,
+  },
+  colorOption: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  selectedColor: {
+    borderColor: '#000',
+  },
+});
