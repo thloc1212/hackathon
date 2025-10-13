@@ -2,6 +2,7 @@ import express from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
 import dotenv from "dotenv";
+import os from "os";
 import { GoogleGenAI, Type } from "@google/genai";
 
 dotenv.config();
@@ -111,7 +112,6 @@ const HOST = '0.0.0.0';
 app.listen(PORT, HOST, () => {
   console.log(`Server chạy tại http://localhost:${PORT}`);
   try {
-    const os = require('os');
     const ifaces = os.networkInterfaces();
     console.log('Network interfaces (IPv4):');
     Object.keys(ifaces).forEach((name) => {
