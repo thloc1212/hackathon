@@ -5,6 +5,8 @@ import Svg, { Path, G } from 'react-native-svg';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { SpendingCategory, SpendingData } from '@/types';
+import { formatCurrency } from '@/utils/formatters';
 
 // Hàm chuyển đổi độ sang radian
 const polarToCartesian = (centerX: number, centerY: number, radius: number, angleInDegrees: number) => {
@@ -37,20 +39,6 @@ const COLORS = [
   '#9B89B3', // Purple
   '#E9967A', // Peach
 ];
-
-type SpendingCategory = {
-  id: string;
-  name: string;
-  budget: number;
-  spent: number;
-  color: string;
-  deleted?: boolean;
-};
-
-type SpendingData = {
-  totalBudget: number;
-  categories: SpendingCategory[];
-};
 
 const BudgetProgress = ({ categories }: { categories: SpendingCategory[] }) => {
   // Tính toán các segment dựa trên tỷ lệ chi tiêu
@@ -112,10 +100,6 @@ const BudgetProgress = ({ categories }: { categories: SpendingCategory[] }) => {
   const strokeWidth = 20; // Độ dày của vòng tròn
   const normalizedRadius = radius - strokeWidth / 2;
   const circumference = 2 * Math.PI * normalizedRadius;
-
-  const formatCurrency = (amount: number) => {
-    return amount.toLocaleString("vi-VN"); 
-  };
 
   return (
     <View style={styles.progressContainer}>

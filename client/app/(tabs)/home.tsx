@@ -16,10 +16,12 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
-import { useColorScheme } from '../hooks/use-color-scheme';
-import { Colors, FontFamily, FontWeight } from '../constants/theme';
-import TransactionItem, { Transaction } from './TransactionItem';
-import AuthService from '../lib/authService';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Colors, FontFamily, FontWeight } from '@/constants/theme';
+import TransactionItem from '@/components/TransactionItem';
+import { Transaction, GeminiTransactionResponse } from '@/types';
+import { formatCurrency } from '@/utils/formatters';
+import AuthService from '@/lib/authService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -97,7 +99,7 @@ export default function HomeScreen({ user, onLogout }: HomeScreenProps) {
   const [result, setResult] = useState<any | null>(null);
   const [error, setError] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [structuredResponse, setStructuredResponse] = useState<any>(null);
+  const [structuredResponse, setStructuredResponse] = useState<GeminiTransactionResponse | null>(null);
 
   useEffect(() => {
     if (user?.email) {
@@ -106,10 +108,6 @@ export default function HomeScreen({ user, onLogout }: HomeScreenProps) {
       setUserName(name.charAt(0).toUpperCase() + name.slice(1));
     }
   }, [user]);
-
-  const formatBalance = (amount: number) => {
-    return amount.toLocaleString('vi-VN') + 'đ';
-  };
 
   const callGemini = async () => {
     setLoading(true);
@@ -195,14 +193,6 @@ export default function HomeScreen({ user, onLogout }: HomeScreenProps) {
     }
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
-  };
-
   return (
     <SafeAreaView style={[dashboardStyles.container, { backgroundColor: '#F0F3F8' }]}>
       <StatusBar style="dark" backgroundColor="#F0F3F8" />
@@ -230,7 +220,7 @@ export default function HomeScreen({ user, onLogout }: HomeScreenProps) {
             style={dashboardStyles.gradientBackground}
           >
             <Text style={dashboardStyles.balanceTitle}>Current Balance</Text>
-            <Text style={dashboardStyles.balanceAmount}>{formatBalance(CURRENT_BALANCE)}</Text>
+            <Text style={dashboardStyles.balanceAmount}>{formatCurrency(CURRENT_BALANCE)}</Text>
           </LinearGradient>
         </View>
 
@@ -314,9 +304,7 @@ export default function HomeScreen({ user, onLogout }: HomeScreenProps) {
                     <View style={dashboardStyles.responseItem}>
                       <Text style={dashboardStyles.responseLabel}>Amount:</Text>
                       <Text style={[dashboardStyles.responseValue, dashboardStyles.amountText]}>
-                        {typeof structuredResponse.amount === 'number' 
-                          ? formatBalance(structuredResponse.amount)
-                          : structuredResponse.amount}
+                        {formatCurrency(structuredResponse.amount)}
                       </Text>
                     </View>
                   )}
@@ -338,12 +326,13 @@ export default function HomeScreen({ user, onLogout }: HomeScreenProps) {
                   )}
 
                   {/* Items (if receipt) */}
-                  {structuredResponse.items && Array.isArray(structuredResponse.items) && (
+                  {structuredResponse.items && Array.isArray(structuredResponse.items) && structuredResponse.items.length > 0 && (
                     <View style={dashboardStyles.responseItem}>
                       <Text style={dashboardStyles.responseLabel}>Items:</Text>
-                      {structuredResponse.items.map((item: any, index: number) => (
+                      {structuredResponse.items.map((item, index: number) => (
                         <Text key={index} style={dashboardStyles.itemText}>
-                          • {item.name || item}: {item.price ? formatBalance(item.price) : ''}
+                          • {item.name}: {formatCurrency(item.price)}
+                          {item.quantity && ` (x${item.quantity})`}
                         </Text>
                       ))}
                     </View>

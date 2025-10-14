@@ -13,7 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Ellipse, Defs, RadialGradient, Stop } from 'react-native-svg';
 import AuthService from '../../lib/authService';
 import RegistrationSuccess from '../../components/RegistrationSuccess';
-import HomeScreen from '../../components/HomeScreen';
+import HomeScreen from './home';
 
 const { width, height } = Dimensions.get('window');
 

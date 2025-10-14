@@ -2,15 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, FontFamily, FontWeight } from '@/constants/theme';
-
-export interface Transaction {
-  id: string;
-  amount: number;
-  category: string;
-  description: string;
-  date: string;
-  type: 'income' | 'expense';
-}
+import { Transaction } from '@/types';
 
 interface TransactionItemProps {
   transaction: Transaction;

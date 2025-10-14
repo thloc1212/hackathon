@@ -13,7 +13,7 @@ export default function RootLayout() {
 			}}
 		>
 			<Tabs.Screen
-				name="index"
+				name="home"
 				options={{
 					title: 'Home',
 					tabBarLabel: 'Home',
@@ -22,10 +22,10 @@ export default function RootLayout() {
 			/>
 
 			<Tabs.Screen
-				name="menu"
+				name="categories"
 				options={{
-					title: 'Menu',
-					tabBarLabel: 'Menu',
+					title: 'Categories',
+					tabBarLabel: 'Categories',
 				}}
 			/>
 
