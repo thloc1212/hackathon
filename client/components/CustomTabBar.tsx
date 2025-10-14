@@ -13,9 +13,9 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
   
   const getIcon = (routeName: string, focused: boolean): keyof typeof Ionicons.glyphMap => {
     switch (routeName) {
-      case 'index':
+      case 'home':
         return focused ? 'home' : 'home-outline';
-      case 'menu':
+      case 'categories':
         return focused ? 'menu' : 'menu-outline';
       case 'camera':
         return focused ? 'camera' : 'camera-outline';

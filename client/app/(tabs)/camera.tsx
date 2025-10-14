@@ -13,25 +13,16 @@ import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { ReceiptInfo } from '@/types';
+import { formatCurrency } from '@/utils/formatters';
 
 const { width, height } = Dimensions.get('window');
-
-interface ReceiptData {
-  total: string;
-  items: Array<{
-    name: string;
-    price: string;
-    quantity?: string;
-  }>;
-  date?: string;
-  merchant?: string;
-}
 
 export default function CameraScreen() {
   const [facing, setFacing] = useState<CameraType>('back');
   const [permission, requestPermission] = useCameraPermissions();
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
-  const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
+  const [receiptData, setReceiptData] = useState<ReceiptInfo | null>(null);
   const [showPanel, setShowPanel] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const cameraRef = useRef<CameraView>(null);
@@ -109,15 +100,15 @@ export default function CameraScreen() {
       await new Promise(resolve => setTimeout(resolve, 2000));
       
       // Mock receipt data - will be replaced with actual OCR results
-      const mockReceiptData: ReceiptData = {
-        total: '$45.67',
+      const mockReceiptData: ReceiptInfo = {
+        total: 45.67,
         merchant: 'Sample Store',
         date: new Date().toLocaleDateString(),
         items: [
-          { name: 'Coffee', price: '$4.50', quantity: '1' },
-          { name: 'Sandwich', price: '$8.99', quantity: '1' },
-          { name: 'Water', price: '$2.18', quantity: '2' },
-          { name: 'Tax', price: '$2.00' },
+          { name: 'Coffee', price: 4.50, quantity: 1 },
+          { name: 'Sandwich', price: 8.99, quantity: 1 },
+          { name: 'Water', price: 2.18, quantity: 2 },
+          { name: 'Tax', price: 2.00 },
         ]
       };
 
@@ -195,13 +186,13 @@ export default function CameraScreen() {
                 Items:
               </Text>
               
-              {receiptData.items.map((item, index) => (
+              {receiptData.items.map((item, index: number) => (
                 <View key={index} style={styles.itemRow}>
                   <Text style={[styles.itemName, { color: Colors[colorScheme ?? 'light'].text }]}>
                     {item.quantity ? `${item.quantity}x ` : ''}{item.name}
                   </Text>
                   <Text style={[styles.itemPrice, { color: Colors[colorScheme ?? 'light'].text }]}>
-                    {item.price}
+                    {formatCurrency(item.price)}
                   </Text>
                 </View>
               ))}
@@ -211,7 +202,7 @@ export default function CameraScreen() {
                   Total:
                 </Text>
                 <Text style={[styles.totalValue, { color: Colors[colorScheme ?? 'light'].tint }]}>
-                  {receiptData.total}
+                  {formatCurrency(receiptData.total)}
                 </Text>
               </View>
             </ScrollView>
