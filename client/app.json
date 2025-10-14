@@ -43,6 +43,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "fonts": [
+      "./assets/fonts/BeVietnamPro-Regular.ttf",
+      "./assets/fonts/BeVietnamPro-Medium.ttf",
+      "./assets/fonts/BeVietnamPro-SemiBold.ttf",
+      "./assets/fonts/BeVietnamPro-Bold.ttf"
+    ]
   }
 }
