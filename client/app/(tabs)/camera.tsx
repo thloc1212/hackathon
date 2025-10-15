@@ -120,6 +120,10 @@ export default function CameraScreen() {
         }
       }
 
+      if (!base64) {
+        throw new Error('Failed to read image as base64');
+      }
+
       // Guess mime type from extension
       const guessMimeType = (uri: string) => {
         const m = uri.match(/\.(\w+)(\?.*)?$/);
@@ -132,23 +136,11 @@ export default function CameraScreen() {
 
       const mimeType = guessMimeType(imageUri);
 
-      // Send to remote parse endpoint
-      const PARSE_URL = 'https://detect-ruby.vercel.app/parse';
-      const resp = await fetch(PARSE_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: base64, mimeType }),
-      });
+      // Use local parseReceipt instead of remote endpoint
+      const { parseReceipt } = await import('@/services/geminiService');
+      const data = await parseReceipt(base64, mimeType);
 
-      if (!resp.ok) {
-        const text = await resp.text();
-        console.error('Parse server error', resp.status, text);
-        throw new Error(`Parse server returned ${resp.status}`);
-      }
-
-      const data = await resp.json();
-
-      // Map server response to ReceiptInfo shape
+      // Data from parseReceipt already matches ReceiptInfo shape
       const mapped: ReceiptInfo = {
         total: typeof data.total === 'number' ? data.total : parseFloat(data.total) || 0,
         merchant: data.merchant ?? '',

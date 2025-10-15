@@ -1,23 +1,23 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
-import { Receipt } from '../types';
 
-if (!process.env.API_KEY) {
-  throw new Error("API_KEY environment variable is not set.");
+// Use API key from client env
+const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+if (!GEMINI_API_KEY) {
+  throw new Error("EXPO_PUBLIC_GEMINI_API_KEY environment variable is not set.");
 }
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
 const receiptSchema = {
   type: Type.OBJECT,
   properties: {
-    storeName: {
+    merchant: {
       type: Type.STRING,
       description: "The name of the store or vendor.",
     },
-    transactionDate: {
+    date: {
       type: Type.STRING,
-      description: "The date of the transaction in YYYY-MM-DD format.",
+      description: "The date of the transaction.",
     },
     total: {
       type: Type.NUMBER,
@@ -46,10 +46,22 @@ const receiptSchema = {
       },
     },
   },
-  required: ["storeName", "transactionDate", "total", "items"],
+  required: ["merchant", "date", "total", "items"],
 };
 
-export async function parseReceipt(base64Image: string, mimeType: string): Promise<Receipt> {
+// Add type for consistency with camera.tsx expected shape
+export interface ReceiptInfo {
+  merchant: string;
+  date: string;
+  total: number;
+  items: Array<{
+    name: string;
+    price: number;
+    quantity?: number;
+  }>;
+}
+
+export async function parseReceipt(base64Image: string, mimeType: string): Promise<ReceiptInfo> {
   try {
     const imagePart = {
       inlineData: {
@@ -59,7 +71,7 @@ export async function parseReceipt(base64Image: string, mimeType: string): Promi
     };
 
     const textPart = {
-      text: "Analyze the receipt image and extract the store name, transaction date, total amount, and a list of all purchased items including their name, quantity, and price. Please format the date as YYYY-MM-DD.",
+      text: "Analyze the receipt image and extract the merchant name, date, total amount, and list of purchased items including name, quantity, and price.",
     };
 
     const response = await ai.models.generateContent({
@@ -74,14 +86,14 @@ export async function parseReceipt(base64Image: string, mimeType: string): Promi
     const jsonText = response.text.trim();
     const parsedData = JSON.parse(jsonText);
     
-    // Basic validation to ensure the data shape matches the Receipt interface
+    // Basic validation to ensure the data shape matches the ReceiptInfo interface
     if (
-        typeof parsedData.storeName === 'string' &&
-        typeof parsedData.transactionDate === 'string' &&
+        typeof parsedData.merchant === 'string' &&
+        typeof parsedData.date === 'string' &&
         typeof parsedData.total === 'number' &&
         Array.isArray(parsedData.items)
     ) {
-        return parsedData as Receipt;
+        return parsedData as ReceiptInfo;
     } else {
         throw new Error("Parsed data does not match the expected receipt structure.");
     }
@@ -91,4 +103,3 @@ export async function parseReceipt(base64Image: string, mimeType: string): Promi
     throw new Error("Failed to analyze the receipt. Please try another image.");
   }
 }
-   
