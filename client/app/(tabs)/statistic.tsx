@@ -1,14 +1,13 @@
 // statistic.tsx
 
-import { Platform, StyleSheet, View, Pressable, ScrollView, TouchableOpacity } from 'react-native';
+import { Platform, StyleSheet, View, Pressable, ScrollView, TouchableOpacity, useWindowDimensions, SafeAreaView } from 'react-native';
 import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
 import { useMemo, useState, useCallback, useEffect } from 'react';
 import { formatCurrency } from '@/utils/formatters';
+import { StatusBar } from 'expo-status-bar';
 
-// Giả định components và types này đã được định nghĩa
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { IconSymbol } from '@/components/ui/icon-symbol';
 
 // Import types mới
 import { StatisticData, SpendingSummary, Transaction } from '@/types'; 
@@ -19,12 +18,7 @@ const DEFAULT_CATEGORY_TABS = ['Tất Cả'];
 // Tính toán lại totalSpent cho Mock Data: (500k + 1.5M + 50k) = 2.050.000
 const MOCK_TOTAL_SPENT = 2050000; 
 
-/**
- * MOCK DATA
- * Dữ liệu giả lập đã cập nhật để khớp với cấu trúc Transaction mới
- */
 const mockStatisticData: StatisticData = {
-  // Đã sửa Total Spent thành 2.999.000 VND như trong ảnh UI
   totalSpent: 2999000,
   transactions: [
     // Giao dịch Chi Tiêu
@@ -42,9 +36,7 @@ const mockStatisticData: StatisticData = {
   insight: 'Gợi ý mặc định: Cố gắng giảm 10% chi tiêu nơi mua sắm.',
 };
 
-/**
- * Hàm giả lập gọi API Gemini để lấy insight
- */
+// Mock Gemini Insight function
 const fetchInsightFromGemini = async (topCategory: SpendingSummary): Promise<string> => {
   // Logic Gemini:
   const spentIncrease = 570000;
@@ -163,6 +155,11 @@ export default function StatisticScreen() {
   const [selectedCategory, setSelectedCategory] = useState<string>('Tất Cả');
   const [showAllTransactions, setShowAllTransactions] = useState(false);
 
+  // Responsive helpers
+  const { width } = useWindowDimensions();
+  const scale = Math.min(Math.max(width / 375, 0.85), 1.25);
+  const paddingH = Math.max(12, Math.round(width * 0.04));
+
   // build category tabs from data
   const categoryTabs = useMemo(() => {
     const cats = new Set<string>();
@@ -174,106 +171,82 @@ export default function StatisticScreen() {
   const filteredTransactions = useMemo(() => {
     // 1. Lọc tất cả các giao dịch là 'expense'
     const expenses = data.transactions.filter(t => t.type === 'expense');
-
-    // 2. Lọc theo category
-    if (selectedCategory === 'Tất Cả') {
-      return expenses;
-    }
+    if (selectedCategory === 'Tất Cả') return expenses;
     return expenses.filter(t => t.category === selectedCategory);
   }, [data.transactions, selectedCategory]);
 
   const displayedTransactions = showAllTransactions ? filteredTransactions : filteredTransactions.slice(0, 3);
-
   const totalSpentFormatted = formatCurrency(data.totalSpent);
   const topSpendingCategory = data.topSpending[0];
 
   return (
-  <ThemedView style={styles.container}>
-      {/* Header, Total Spent Box, Tabs Container (không đổi) */}
-      <View style={styles.header}>
-      </View>
-      
-      <ScrollView style={styles.content}>
-        
-        {/* Tổng Chi Tiêu */}
-        <View style={styles.totalSpentBox}>
-          <ThemedText style={styles.totalSpentLabel}>Tổng Chi Tiêu</ThemedText>
-          <ThemedText style={styles.totalSpentValue}>
-            {totalSpentFormatted} VND
-          </ThemedText>
-        </View>
+    <ThemedView style={styles.container}>
+      <StatusBar style="dark" backgroundColor="#F0F3F8" />
+      <SafeAreaView style={{ flex: 1 }}>
+        <ScrollView style={styles.content} contentContainerStyle={{ paddingHorizontal: paddingH }}>
 
-        {/* Lịch sử giao dịch gần nhất (Tab) */}
-        <View style={styles.tabsContainer}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {categoryTabs.map((tab) => (
-              <Pressable
-                key={tab}
-                style={[
-                  styles.tabButton,
-                  selectedCategory === tab && styles.tabSelected,
-                ]}
-                onPress={() => setSelectedCategory(tab)}
-              >
-                <ThemedText
+          {/* Tổng Chi Tiêu */}
+          <View style={[styles.totalSpentBox, { padding: Math.round(20 * scale), borderRadius: Math.round(16 * scale) }]}>
+            <ThemedText style={[styles.totalSpentLabel, { fontSize: Math.round(20 * scale) }]}>Tổng Chi Tiêu</ThemedText>
+            <ThemedText style={[styles.totalSpentValue, { fontSize: Math.round(35 * scale) }]}>
+              {totalSpentFormatted} VND
+            </ThemedText>
+          </View>
+
+          {/* Tabs */}
+          <View style={styles.tabsContainer}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingVertical: 8 }}>
+              {categoryTabs.map((tab) => (
+                <Pressable
+                  key={tab}
                   style={[
-                    styles.tabText,
-                    selectedCategory === tab ? styles.tabTextSelected : styles.tabTextUnselected,
+                    styles.tabButton,
+                    selectedCategory === tab && styles.tabSelected,
+                    { paddingHorizontal: Math.round(12 * scale), paddingVertical: Math.round(6 * scale) }
                   ]}
+                  onPress={() => setSelectedCategory(tab)}
                 >
-                  {tab}
-                </ThemedText>
-              </Pressable>
-            ))}
-          </ScrollView>
-        </View>
+                  <ThemedText style={[styles.tabText, { fontSize: Math.round(14 * scale) }, selectedCategory === tab ? styles.tabTextSelected : styles.tabTextUnselected]}>
+                    {tab}
+                  </ThemedText>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
 
-        {/* Hiển thị Giao dịch gần nhất theo tab (mặc định 3, có thể View All) */}
-        {displayedTransactions.map(transaction => (
-          <SpendingItem key={transaction.id} transaction={transaction} />
-        ))}
-        {filteredTransactions.length > 3 && (
-          <TouchableOpacity
-            style={styles.viewAllButton}
-            onPress={() => setShowAllTransactions(s => !s)}
-          >
-            <ThemedText style={styles.viewAllText}>{showAllTransactions ? 'Show less' : 'View All'}</ThemedText>
-          </TouchableOpacity>
-        )}
-        
-        {/* Top 3 Chi Tiêu (không đổi) */}
-        <ThemedText style={styles.sectionTitle}>Top 3 chi tiêu</ThemedText>
-        <View style={styles.topSpendingContainer}>
-          {data.topSpending.map((item, index) => (
-            <ExpoLinearGradient
-              key={index}
-              colors={['#B9B4FF', '#EDE9FF']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.topSpendingGradientItem}
-            >
-              <View style={styles.topSpendingInner}>
-                <ThemedText style={styles.topSpendingRank}>{index + 1}.</ThemedText>
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <ThemedText style={styles.topSpendingCategory}>
-                    {item.category} {item.percentage}%
-                  </ThemedText>
-                </View>
-                  <ThemedText style={styles.topSpendingAmount}>
-                    -{formatCurrency(item.spent)} VND
-                  </ThemedText>
-              </View>
-            </ExpoLinearGradient>
+          {/* Transactions */}
+          {displayedTransactions.map(transaction => (
+            <View key={transaction.id} style={{ marginBottom: Math.round(12 * scale) }}>
+              <SpendingItem transaction={transaction} />
+            </View>
           ))}
-        </View>
+          {filteredTransactions.length > 3 && (
+            <TouchableOpacity style={styles.viewAllButton} onPress={() => setShowAllTransactions(s => !s)}>
+              <ThemedText style={[styles.viewAllText, { fontSize: Math.round(14 * scale) }]}>{showAllTransactions ? 'Show less' : 'View All'}</ThemedText>
+            </TouchableOpacity>
+          )}
 
-        {/* Mẹo tiết kiệm thông minh (Gemini Insight) */}
-        <SpendingInsight topSpending={topSpendingCategory} />
-        
-        {/* Spacer và Footer Nav Bar (không đổi) */}
-        <View style={{ height: 100 }} /> 
-      </ScrollView>
+          {/* Top 3 */}
+          <ThemedText style={[styles.sectionTitle, { fontSize: Math.round(24 * scale), marginTop: Math.round(40 * scale) }]}>Top 3 chi tiêu</ThemedText>
+          <View style={styles.topSpendingContainer}>
+            {data.topSpending.map((item, index) => (
+              <ExpoLinearGradient key={index} colors={['#B9B4FF', '#EDE9FF']} start={{x:0,y:0}} end={{x:1,y:0}} style={[styles.topSpendingGradientItem, { padding: Math.round(12 * scale), borderRadius: Math.round(12 * scale) }]}>
+                <View style={[styles.topSpendingInner, { alignItems: 'center' }]}>
+                  <ThemedText style={[styles.topSpendingRank, { fontSize: Math.round(16 * scale) }]}>{index + 1}.</ThemedText>
+                  <View style={{ flex: 1, marginLeft: Math.round(10 * scale) }}>
+                    <ThemedText style={[styles.topSpendingCategory, { fontSize: Math.round(15 * scale) }]}>{item.category} {item.percentage}%</ThemedText>
+                  </View>
+                  <ThemedText style={[styles.topSpendingAmount, { fontSize: Math.round(15 * scale) }]}>-{formatCurrency(item.spent)} VND</ThemedText>
+                </View>
+              </ExpoLinearGradient>
+            ))}
+          </View>
 
+          <SpendingInsight topSpending={topSpendingCategory} />
+
+          <View style={{ height: Math.round(100 * scale) }} />
+        </ScrollView>
+      </SafeAreaView>
     </ThemedView>
   );
 }
@@ -313,6 +286,7 @@ const styles = StyleSheet.create({
     padding: 20,
     alignItems: 'center',
     marginBottom: 24,
+    marginTop: 30,
   },
   totalSpentLabel: {
     fontSize: 20,
