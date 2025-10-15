@@ -96,7 +96,7 @@ export default function HomeScreen() {
       // Convert Gemini response to transaction format
       const transactionData = {
         amount: Math.abs(structuredResponse.amount || structuredResponse.total || 0), // Ensure positive amount
-        category: structuredResponse.category || 'Other',
+        category: structuredResponse.category || 'Other', // Use AI-determined category, fallback to 'Other'
         description: structuredResponse.merchant || 'Transaction',
         date: new Date().toISOString().split('T')[0], // Today's date in YYYY-MM-DD format
         type: 'expense' as const, // Default to expense for receipts

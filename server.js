@@ -563,6 +563,19 @@ app.post("/parse", async (req, res) => {
           properties: {
             merchant: { type: Type.STRING },
             total: { type: Type.NUMBER },
+            category: {
+              type: Type.STRING,
+              description: "The primary spending category for this entire transaction, determined by analyzing all items purchased. Choose the most dominant category. If unsure, try searching on the Internet what the brand is about. Choose 'Khác' when unknown.",
+              enum: [
+                "Ăn uống",
+                "Di chuyển",
+                "Mua sắm",
+                "Giải trí",
+                "Sức khỏe",
+                "Giáo dục",
+                "Khác",
+              ],
+            },
             items: {
               type: Type.ARRAY,
               items: {
@@ -572,20 +585,22 @@ app.post("/parse", async (req, res) => {
                   amount: { type: Type.NUMBER },
                   category: {
                     type: Type.STRING,
+                    description: "The category of this specific item. If unsure, try searching on the Internet what it is about. Choose 'Khác' when unknown.",
                     enum: [
-                      "Food",
-                      "Transport",
-                      "Utilities",
-                      "Shopping",
-                      "Health",
-                      "Education",
-                      "Other",
+                      "Ăn uống",
+                      "Di chuyển",
+                      "Mua sắm",
+                      "Giải trí",
+                      "Sức khỏe",
+                      "Giáo dục",
+                      "Khác",
                     ],
                   },
                 },
               },
             },
           },
+          required: ["category"],
         },
       },
     });
@@ -594,9 +609,11 @@ app.post("/parse", async (req, res) => {
     let data;
     if (response && response.parsed) {
       data = response.parsed;
+      console.log('[/parse] Gemini response.parsed:', JSON.stringify(data, null, 2));
     } else if (response && typeof response.text === 'string') {
       try {
         data = JSON.parse(response.text);
+        console.log('[/parse] Gemini response.text parsed:', JSON.stringify(data, null, 2));
       } catch (parseErr) {
         console.error('Failed to JSON.parse response.text:', parseErr);
         console.error('Raw response:', response);
@@ -608,6 +625,51 @@ app.post("/parse", async (req, res) => {
       data = response ?? { message: 'No response from model' };
     }
 
+    // Fallback: Convert English categories to Vietnamese if AI still returns English
+    const categoryMap = {
+      'Food': 'Ăn uống',
+      'Transport': 'Di chuyển',
+      'Shopping': 'Mua sắm',
+      'Entertainment': 'Giải trí',
+      'Health': 'Sức khỏe',
+      'Education': 'Giáo dục',
+      'Other': 'Khác',
+      'Utilities': 'Khác'
+    };
+    
+    // Convert overall category
+    if (data.category && categoryMap[data.category]) {
+      console.warn(`[/parse] Converting English category "${data.category}" to Vietnamese "${categoryMap[data.category]}"`);
+      data.category = categoryMap[data.category];
+    }
+    
+    // Convert item categories
+    if (Array.isArray(data.items)) {
+      data.items.forEach((item) => {
+        if (item.category && categoryMap[item.category]) {
+          console.warn(`[/parse] Converting item English category "${item.category}" to Vietnamese "${categoryMap[item.category]}"`);
+          item.category = categoryMap[item.category];
+        }
+      });
+    }
+
+    // Ensure category field exists in response
+    if (!data.category && data.items && data.items.length > 0) {
+      console.warn('[/parse] WARNING: AI did not return overall category, will use item categories to determine');
+      // Fallback: determine category from items if AI didn't provide one
+      const categoryCounts = {};
+      data.items.forEach((item) => {
+        if (item.category) {
+          categoryCounts[item.category] = (categoryCounts[item.category] || 0) + 1;
+        }
+      });
+      // Pick the most frequent category
+      const dominantCategory = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Khác';
+      data.category = dominantCategory;
+      console.log('[/parse] Auto-determined category from items:', dominantCategory);
+    }
+
+    console.log('[/parse] Final response being sent to client:', JSON.stringify(data, null, 2));
     res.json(data);
   } catch (err) {
     console.error('Error in /parse handler:', err);
@@ -646,7 +708,33 @@ app.post('/insight', async (req, res) => {
 });
 
 function buildPrompt() {
-  return `Extract structured data (merchant, total, items, categories) from the given receipt text or image. Return JSON only.`;
+  return `IMPORTANT: You MUST respond in Vietnamese. Use Vietnamese category names ONLY.
+
+Trích xuất dữ liệu có cấu trúc từ văn bản hoặc hình ảnh hóa đơn.
+  
+Hướng dẫn:
+1. Trích xuất tên cửa hàng, tổng tiền và danh sách các mặt hàng với số tiền của chúng
+2. Với mỗi món hàng, xác định danh mục của nó
+3. Phân tích TẤT CẢ các món hàng để xác định danh mục CHÍNH cho toàn bộ giao dịch này:
+   - Nếu hầu hết các món là đồ ăn/đồ uống → category: "Ăn uống" (NOT "Food")
+   - Nếu các món liên quan đến vận chuyển/di chuyển → category: "Di chuyển" (NOT "Transport")
+   - Nếu là mua sắm/bán lẻ → category: "Mua sắm" (NOT "Shopping")
+   - Nếu là y tế/dược phẩm → category: "Sức khỏe" (NOT "Health")
+   - Nếu là giáo dục → category: "Giáo dục" (NOT "Education")
+   - Nếu là phim/game/giải trí → category: "Giải trí" (NOT "Entertainment")
+   - Nếu không chắc chắn → category: "Khác" (NOT "Other")
+4. Trả về JSON với merchant, total, category (cho toàn bộ giao dịch), và items array (mỗi món có description, amount, category)
+
+CRITICAL: The category field MUST be one of these EXACT Vietnamese strings:
+- "Ăn uống"
+- "Di chuyển"
+- "Mua sắm"
+- "Giải trí"
+- "Sức khỏe"
+- "Giáo dục"
+- "Khác"
+
+DO NOT use English category names like "Food", "Transport", "Shopping", "Health", "Education", "Entertainment", or "Other".`;
 }
 
 const PORT = process.env.PORT || 3001;

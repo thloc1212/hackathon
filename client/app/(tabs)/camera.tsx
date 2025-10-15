@@ -147,11 +147,13 @@ export default function CameraScreen() {
         total: typeof data.total === 'number' ? data.total : parseFloat(data.total) || 0,
         merchant: data.merchant ?? '',
         date: data.date ?? new Date().toLocaleDateString(),
+        category: data.category, // Include AI-determined category
         items: Array.isArray(data.items)
           ? data.items.map((it: any) => ({
               name: it.description ?? it.name ?? 'Item',
               price: typeof it.amount === 'number' ? it.amount : parseFloat(it.amount) || 0,
               quantity: it.quantity ?? 1,
+              category: it.category, // Include item-level category
             }))
           : [],
       };
@@ -222,6 +224,17 @@ export default function CameraScreen() {
                   </Text>
                   <Text style={[styles.receiptValue, { color: Colors[colorScheme ?? 'light'].text }]}>
                     {receiptData.date}
+                  </Text>
+                </View>
+              )}
+
+              {receiptData.category && (
+                <View style={styles.receiptRow}>
+                  <Text style={[styles.receiptLabel, { color: Colors[colorScheme ?? 'light'].text }]}>
+                    Category:
+                  </Text>
+                  <Text style={[styles.receiptValue, { color: Colors[colorScheme ?? 'light'].tint, fontWeight: '600' }]}>
+                    {receiptData.category}
                   </Text>
                 </View>
               )}

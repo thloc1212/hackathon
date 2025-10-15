@@ -24,7 +24,7 @@ export interface ReceiptInfo {
   total: number; // Changed from string to number for consistency
   date?: string;
   items: ReceiptItem[];
-  category?: string;
+  category?: string; // AI-determined primary category for the transaction
 }
 
 /**
@@ -34,6 +34,7 @@ export interface ReceiptItem {
   name: string;
   price: number; // Changed from string to number for consistency
   quantity?: number; // Changed from string to number for consistency
+  category?: string; // Category of the individual item
 }
 
 /**
