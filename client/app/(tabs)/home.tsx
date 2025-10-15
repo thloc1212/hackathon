@@ -19,128 +19,114 @@ import { Ionicons } from '@expo/vector-icons';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors, FontFamily, FontWeight } from '@/constants/theme';
 import TransactionItem from '@/components/TransactionItem';
-import { Transaction, GeminiTransactionResponse } from '@/types';
+import { Transaction } from '@/types';
 import { formatCurrency } from '@/utils/formatters';
+import AuthService from '@/lib/authService';
+import { useApi, GeminiTransactionResponse } from '@/hooks/useApi';
+import { useDatabase } from '@/hooks/useDatabase';
 
 const { width, height } = Dimensions.get('window');
 
-// Server URL for Gemini backend
-const SERVER_URL =
-  Platform.OS === 'android'
-    ? 'http://10.0.2.2:3000' // Android emulator
-    : 'http://10.126.7.73:3000'; // iOS simulator
-
-// Mock financial data
-const CURRENT_BALANCE = 2450000; // VND
-
-// Mock recent transactions
-const RECENT_TRANSACTIONS: Transaction[] = [
-  {
-    id: '1',
-    amount: -70000,
-    category: 'Food & Drink',
-    description: 'Highlands Coffee',
-    date: '13/10/2025',
-    type: 'expense',
-  },
-  {
-    id: '2',
-    amount: 500000,
-    category: 'Salary',
-    description: 'Monthly Bonus',
-    date: '12/10/2025',
-    type: 'income',
-  },
-  {
-    id: '3',
-    amount: -150000,
-    category: 'Transportation',
-    description: 'Grab Bike',
-    date: '12/10/2025',
-    type: 'expense',
-  },
-  {
-    id: '4',
-    amount: -45000,
-    category: 'Shopping',
-    description: 'Circle K',
-    date: '11/10/2025',
-    type: 'expense',
-  },
-  {
-    id: '5',
-    amount: 1200000,
-    category: 'Transfer',
-    description: 'From Mom',
-    date: '10/10/2025',
-    type: 'income',
-  },
-];
-
-interface HomeScreenProps {
-  user?: {
-    id: string;
-    email: string;
-    dateOfBirth?: string;
-    createdAt: string;
-  };
-}
-
-export default function HomeScreen({ user }: HomeScreenProps) {
+export default function HomeScreen() {
   const colorScheme = 'light'; // Force light mode
   const colors = Colors[colorScheme];
   const [userName, setUserName] = useState('');
   
   // Dashboard state
   const [ocrText, setOcrText] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any | null>(null);
-  const [error, setError] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [structuredResponse, setStructuredResponse] = useState<GeminiTransactionResponse | null>(null);
+  const [addingTransaction, setAddingTransaction] = useState(false);
+  
+  // Database context for centralized data management
+  const { 
+    transactions, 
+    stats, 
+    loading: dbLoading, 
+    error: dbError, 
+    refreshData,
+    addTransaction: addTransactionToDb
+  } = useDatabase();
+  
+  // API hook for parsing receipts
+  const { 
+    loading: parseLoading, 
+    error: parseError, 
+    parseReceipt,
+    ping,
+    parseTest
+  } = useApi();
 
   useEffect(() => {
-    if (user?.email) {
+    const currentUser = AuthService.getCurrentUser();
+    if (currentUser?.email) {
       // Extract name from email (before @ symbol)
-      const name = user.email.split('@')[0];
+      const name = currentUser.email.split('@')[0];
       setUserName(name.charAt(0).toUpperCase() + name.slice(1));
     }
-  }, [user]);
+  }, []);
+
+
+
+  // Data is now managed by the DatabaseProvider context
+  // No need for manual data loading
 
   const callGemini = async () => {
-    setLoading(true);
-    setError('');
-    setResult(null);
     try {
-      const url = `${SERVER_URL}/parse`;
-      const body = JSON.stringify({ ocrText });
-      console.log('[client] POST', url, 'body length', body.length);
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body,
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      setResult(data);
+      const response = await parseReceipt(ocrText);
       
-      // Structure the response and show modal
-      setStructuredResponse(data);
-      setShowModal(true);
+      if (response.success && response.data) {
+        // Structure the response and show modal
+        setStructuredResponse(response.data);
+        setShowModal(true);
+      } else {
+        Alert.alert('Error', response.error || 'Failed to parse receipt');
+      }
     } catch (err: any) {
-      // Log full error for debugging
-      console.error('[client] fetch error:', err);
-      setError(err?.message ?? String(err));
-    } finally {
-      setLoading(false);
+      console.error('[client] Gemini error:', err);
+      Alert.alert('Error', err?.message || 'Failed to parse receipt');
     }
   };
 
-  const handleAddTransaction = () => {
-    console.log('Adding transaction:', structuredResponse);
-    // TODO: Add transaction logic here
-    setShowModal(false);
-    setOcrText('');
+  const handleAddTransaction = async () => {
+    if (!structuredResponse || addingTransaction) return;
+
+    setAddingTransaction(true);
+    try {
+      // Convert Gemini response to transaction format
+      const transactionData = {
+        amount: Math.abs(structuredResponse.amount || structuredResponse.total || 0), // Ensure positive amount
+        category: structuredResponse.category || 'Other',
+        description: structuredResponse.merchant || 'Transaction',
+        date: new Date().toISOString().split('T')[0], // Today's date in YYYY-MM-DD format
+        type: 'expense' as const, // Default to expense for receipts
+        merchant: structuredResponse.merchant,
+        items: structuredResponse.items?.map(item => ({
+          name: item.name || item.description || 'Item',
+          price: item.price || item.amount || 0,
+          quantity: item.quantity || 1,
+          category: item.category
+        })) || []
+      };
+
+      console.log('Adding transaction:', transactionData);
+      const success = await addTransactionToDb(transactionData);
+      
+      if (success) {
+        Alert.alert('Success', 'Transaction added successfully');
+        setShowModal(false);
+        setOcrText('');
+        setStructuredResponse(null);
+        // Refresh data will be called automatically by the DatabaseProvider
+      } else {
+        Alert.alert('Error', dbError || 'Failed to add transaction');
+      }
+    } catch (error) {
+      console.error('Add transaction error:', error);
+      Alert.alert('Error', 'Failed to add transaction');
+    } finally {
+      setAddingTransaction(false);
+    }
   };
 
   const handleChangeTransaction = () => {
@@ -156,10 +142,12 @@ export default function HomeScreen({ user }: HomeScreenProps) {
   // Connectivity checks
   const doPing = async () => {
     try {
-      const res = await fetch(`${SERVER_URL}/ping`);
-      const json = await res.json();
-      console.log('[client] ping response', json);
-      Alert.alert('Ping Success', `ping ok: ${json.ok}`);
+      const response = await ping();
+      if (response.success && response.data) {
+        Alert.alert('Ping Success', `Server is reachable: ${response.data.ok}`);
+      } else {
+        Alert.alert('Ping Error', response.error || 'Failed to ping server');
+      }
     } catch (err) {
       console.error('[client] ping error', err);
       Alert.alert('Ping Error', `ping error: ${err}`);
@@ -168,20 +156,27 @@ export default function HomeScreen({ user }: HomeScreenProps) {
 
   const doParseTest = async () => {
     try {
-      const url = `${SERVER_URL}/parse-test`;
-      const body = JSON.stringify({ test: true, sample: 'abc' });
-      console.log('[client] POST', url, 'body', body);
-      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
-      const json = await res.json();
-      console.log('[client] parse-test response', json);
-      Alert.alert('Parse Test Success', `parse-test ok: ${JSON.stringify(json)}`);
+      const response = await parseTest();
+      if (response.success) {
+        Alert.alert('Parse Test Success', `Response: ${JSON.stringify(response.data)}`);
+      } else {
+        Alert.alert('Parse Test Error', response.error || 'Failed to test parse endpoint');
+      }
     } catch (err) {
       console.error('[client] parse-test error', err);
       Alert.alert('Parse Test Error', `parse-test error: ${err}`);
     }
   };
 
-
+  const handleLogout = async () => {
+    try {
+      await AuthService.signout();
+      Alert.alert('Success', 'Logged out successfully');
+      // The auth service will trigger the auth change listener and navigate automatically
+    } catch (error) {
+      Alert.alert('Error', 'Failed to logout');
+    }
+  };
 
   return (
     <SafeAreaView style={[dashboardStyles.container, { backgroundColor: '#F0F3F8' }]}>
@@ -208,7 +203,7 @@ export default function HomeScreen({ user }: HomeScreenProps) {
             style={dashboardStyles.gradientBackground}
           >
             <Text style={dashboardStyles.balanceTitle}>Current Balance</Text>
-            <Text style={dashboardStyles.balanceAmount}>{formatCurrency(CURRENT_BALANCE)}</Text>
+            <Text style={dashboardStyles.balanceAmount}>{formatCurrency(stats?.balance || 0)}</Text>
           </LinearGradient>
         </View>
 
@@ -228,13 +223,13 @@ export default function HomeScreen({ user }: HomeScreenProps) {
           />
           <Pressable
             onPress={callGemini}
-            style={[dashboardStyles.geminiButton, { backgroundColor: error ? "#FF3D00" : "#5F58C2" }]}
-            disabled={loading || !ocrText.trim()}
+            style={[dashboardStyles.geminiButton, { backgroundColor: parseError ? "#FF3D00" : "#5F58C2" }]}
+            disabled={parseLoading || !ocrText.trim()}
           >
-            {loading ? (
+            {parseLoading ? (
               <ActivityIndicator size="small" color="#fff" />
             ) : (
-              error ? <Ionicons name="reload" size={25} color="#fff" /> : <Ionicons name="send" size={25} color="#fff" />
+              parseError ? <Ionicons name="reload" size={25} color="#fff" /> : <Ionicons name="send" size={25} color="#fff" />
             )}
           </Pressable>
         </View>
@@ -245,13 +240,22 @@ export default function HomeScreen({ user }: HomeScreenProps) {
             Recent Transactions
           </Text>
           <View style={dashboardStyles.transactionsList}>
-            {RECENT_TRANSACTIONS.map((transaction) => (
+            {Array.isArray(transactions) && transactions.map((transaction) => (
               <TransactionItem
                 key={transaction.id}
-                transaction={transaction}
+                transaction={{
+                  ...transaction,
+                  amount: transaction.type === 'expense' ? -Math.abs(transaction.amount || 0) : (transaction.amount || 0),
+                  date: transaction.date ? new Date(transaction.date).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB'),
+                }}
                 colorScheme='light'
               />
             ))}
+            {(!Array.isArray(transactions) || transactions.length === 0) && (
+              <Text style={[dashboardStyles.emptyText, { color: colors.text }]}>
+                No transactions yet. Add your first transaction by parsing a receipt above!
+              </Text>
+            )}
           </View>
         </View>
       </ScrollView>
@@ -288,11 +292,11 @@ export default function HomeScreen({ user }: HomeScreenProps) {
                   )}
 
                   {/* Amount */}
-                  {structuredResponse.amount && (
+                  {(structuredResponse.amount || structuredResponse.total) && (
                     <View style={dashboardStyles.responseItem}>
                       <Text style={dashboardStyles.responseLabel}>Amount:</Text>
                       <Text style={[dashboardStyles.responseValue, dashboardStyles.amountText]}>
-                        {formatCurrency(structuredResponse.amount)}
+                        {formatCurrency(structuredResponse.amount || structuredResponse.total || 0)}
                       </Text>
                     </View>
                   )}
@@ -319,7 +323,7 @@ export default function HomeScreen({ user }: HomeScreenProps) {
                       <Text style={dashboardStyles.responseLabel}>Items:</Text>
                       {structuredResponse.items.map((item, index: number) => (
                         <Text key={index} style={dashboardStyles.itemText}>
-                          • {item.name}: {formatCurrency(item.price)}
+                          • {item.name || item.description || 'Item'}: {formatCurrency(item.price || item.amount || 0)}
                           {item.quantity && ` (x${item.quantity})`}
                         </Text>
                       ))}
@@ -340,10 +344,15 @@ export default function HomeScreen({ user }: HomeScreenProps) {
             {/* Action Buttons */}
             <View style={dashboardStyles.modalActions}>
               <Pressable
-                style={[dashboardStyles.actionButton, dashboardStyles.addButton]}
+                style={[dashboardStyles.actionButton, dashboardStyles.addButton, addingTransaction && { opacity: 0.6 }]}
                 onPress={handleAddTransaction}
+                disabled={addingTransaction}
               >
-                <Text style={dashboardStyles.actionButtonText}>Add Transaction</Text>
+                {addingTransaction ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={dashboardStyles.actionButtonText}>Add Transaction</Text>
+                )}
               </Pressable>
               
               <Pressable
@@ -594,5 +603,14 @@ const dashboardStyles = StyleSheet.create({
     fontSize: 16,
     fontFamily: FontFamily.semiBold,
     fontWeight: FontWeight.semiBold,
+  },
+  emptyText: {
+    textAlign: 'center',
+    fontSize: 16,
+    fontFamily: FontFamily.regular,
+    fontWeight: FontWeight.regular,
+    opacity: 0.6,
+    marginTop: 20,
+    marginBottom: 20,
   },
 });

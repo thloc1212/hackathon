@@ -7,8 +7,11 @@
  * @param amount - The amount to format
  * @returns Formatted currency string (e.g., "1,000,000đ")
  */
-export const formatCurrency = (amount: number): string => {
-  return amount.toLocaleString('vi-VN') + 'đ';
+export const formatCurrency = (amount: number | undefined | null): string => {
+  if (amount === undefined || amount === null || isNaN(amount)) {
+    return '0đ';
+  }
+  return Math.abs(amount).toLocaleString('vi-VN') + 'đ';
 };
 
 /**
@@ -53,7 +56,11 @@ export const formatDateLong = (dateString: string): string => {
  * @param showSign - Whether to show + or - sign
  * @returns Formatted amount with sign
  */
-export const formatTransactionAmount = (amount: number, showSign: boolean = true): string => {
+export const formatTransactionAmount = (amount: number | undefined | null, showSign: boolean = true): string => {
+  if (amount === undefined || amount === null || isNaN(amount)) {
+    return showSign ? '+0đ' : '0đ';
+  }
+  
   const isPositive = amount > 0;
   const formattedAmount = Math.abs(amount).toLocaleString('vi-VN');
   

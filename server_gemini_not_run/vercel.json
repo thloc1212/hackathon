@@ -1,5 +1,0 @@
-{
-  "rewrites": [
-    { "source": "/parse", "destination": "/api/parse" }
-  ]
-}
