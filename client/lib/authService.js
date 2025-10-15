@@ -11,6 +11,8 @@ class AuthService {
   constructor() {
     this.user = null;
     this.session = null;
+    // simple subscription for auth changes
+    this._listeners = [];
   }
 
   async signup(email, password, dateOfBirth) {
@@ -72,6 +74,11 @@ class AuthService {
         session: data.session,
       }));
 
+      // notify listeners
+      this.user = data.user;
+      this.session = data.session;
+      this._emitAuthChange();
+
       return {
         success: true,
         user: data.user,
@@ -103,6 +110,9 @@ class AuthService {
       this.session = null;
       await AsyncStorage.removeItem(SESSION_KEY);
 
+  // notify listeners
+  this._emitAuthChange();
+
       return { success: true };
     } catch (error) {
       console.error('Signout error:', error);
@@ -128,6 +138,7 @@ class AuthService {
       if (isValid) {
         this.user = user;
         this.session = session;
+        this._emitAuthChange();
         return { user, session };
       } else {
         // Invalid session, clear storage
@@ -138,6 +149,30 @@ class AuthService {
       console.error('Load session error:', error);
       await AsyncStorage.removeItem(SESSION_KEY);
       return null;
+    }
+  }
+
+  // subscription API
+  onAuthChange(cb) {
+    if (typeof cb === 'function') {
+      this._listeners.push(cb);
+      // return unsubscribe
+      return () => this.offAuthChange(cb);
+    }
+    return () => {};
+  }
+
+  offAuthChange(cb) {
+    this._listeners = this._listeners.filter((fn) => fn !== cb);
+  }
+
+  _emitAuthChange() {
+    try {
+      this._listeners.forEach((fn) => {
+        try { fn(this.user, this.session); } catch (e) { /* noop */ }
+      });
+    } catch (e) {
+      // noop
     }
   }
 
