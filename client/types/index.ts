@@ -68,3 +68,16 @@ export interface GeminiTransactionResponse {
   items?: ReceiptItem[];
   raw?: any; // For debugging
 }
+
+export interface SpendingSummary {
+  category: string;
+  percentage: number; // 35 (cho 35%)
+  spent: number;
+}
+
+export interface StatisticData {
+  totalSpent: number;
+  transactions: Transaction[];
+  topSpending: SpendingSummary[];
+  insight: string; // Mẹo tiết kiệm
+}
