@@ -12,6 +12,7 @@ import {
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
+import { useIsFocused } from '@react-navigation/native';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ReceiptInfo } from '@/types';
@@ -30,6 +31,7 @@ export default function CameraScreen() {
   const cameraRef = useRef<CameraView>(null);
   const colorScheme = useColorScheme();
   const { parseReceipt, addTransaction } = useApi();
+  const isFocused = useIsFocused();
 
   useEffect(() => {
     (async () => {
@@ -256,21 +258,23 @@ export default function CameraScreen() {
 
   return (
     <View style={styles.container}>
-      <CameraView ref={cameraRef} style={styles.camera} facing={facing}>
-        <View style={styles.cameraControls}>
-          <TouchableOpacity style={styles.flipButton} onPress={toggleCameraFacing}>
-            <Text style={styles.buttonIcon}>🔄</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.captureButton} onPress={takePicture}>
-            <View style={styles.captureButtonInner} />
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.albumButton} onPress={pickImage}>
-            <Text style={styles.buttonIcon}>📷</Text>
-          </TouchableOpacity>
-        </View>
-      </CameraView>
+      {isFocused && (
+        <CameraView ref={cameraRef} style={styles.camera} facing={facing}>
+          <View style={styles.cameraControls}>
+            <TouchableOpacity style={styles.flipButton} onPress={toggleCameraFacing}>
+              <Text style={styles.buttonIcon}>🔄</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.captureButton} onPress={takePicture}>
+              <View style={styles.captureButtonInner} />
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.albumButton} onPress={pickImage}>
+              <Text style={styles.buttonIcon}>📷</Text>
+            </TouchableOpacity>
+          </View>
+        </CameraView>
+      )}
       
       <View style={[styles.instructionContainer, { backgroundColor: Colors[colorScheme ?? 'light'].background }]}>
         <Text style={[styles.instructionText, { color: Colors[colorScheme ?? 'light'].text }]}>
