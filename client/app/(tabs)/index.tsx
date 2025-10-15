@@ -442,8 +442,10 @@ const styles = StyleSheet.create({
   },
   welcomeText: {
     position: 'absolute',
-    left: 90,
+    left: 0,
+    right: 0,
     top: 363,
+    textAlign: 'center',
     color: '#0B1179',
     fontSize: 30,
     fontFamily: 'Be Vietnam Pro',

@@ -1,57 +1,44 @@
 import * as Font from 'expo-font';
 import { Platform } from 'react-native';
+import {
+  BeVietnamPro_400Regular,
+  BeVietnamPro_500Medium,
+  BeVietnamPro_600SemiBold,
+  BeVietnamPro_700Bold,
+  BeVietnamPro_400Regular_Italic,
+  BeVietnamPro_500Medium_Italic,
+} from '@expo-google-fonts/be-vietnam-pro';
 
 export const loadFonts = async () => {
   try {
-    // Try to load BeVietnamPro fonts if they exist
-    // If fonts don't exist, this will fail gracefully
-    console.log('Attempting to load BeVietnamPro fonts...');
+    console.log('Loading Be Vietnam Pro fonts from Google Fonts...');
     
-    // For now, we'll skip font loading until actual font files are downloaded
-    // Uncomment the lines below after downloading the font files
-    
-    /*
     await Font.loadAsync({
-      'BeVietnamPro-Regular': require('../assets/fonts/BeVietnamPro-Regular.ttf'),
-      'BeVietnamPro-Medium': require('../assets/fonts/BeVietnamPro-Medium.ttf'),
-      'BeVietnamPro-SemiBold': require('../assets/fonts/BeVietnamPro-SemiBold.ttf'),
-      'BeVietnamPro-Bold': require('../assets/fonts/BeVietnamPro-Bold.ttf'),
+      'BeVietnamPro-Regular': BeVietnamPro_400Regular,
+      'BeVietnamPro-Medium': BeVietnamPro_500Medium,
+      'BeVietnamPro-SemiBold': BeVietnamPro_600SemiBold,
+      'BeVietnamPro-Bold': BeVietnamPro_700Bold,
+      'BeVietnamPro-Regular-Italic': BeVietnamPro_400Regular_Italic,
+      'BeVietnamPro-Medium-Italic': BeVietnamPro_500Medium_Italic,
+      'Be Vietnam Pro': BeVietnamPro_400Regular,
     });
-    */
     
-    console.log('Font loading completed (using system fonts as fallback)');
+    console.log('Google Fonts loaded successfully');
   } catch (error) {
-    console.warn('Failed to load custom fonts, using system fonts:', error);
+    console.warn('Failed to load Google Fonts, using system fonts:', error);
   }
 };
 
-// Use system fonts with proper font weights as fallback
-export const FontFamily = Platform.select({
-  ios: {
-    regular: 'System',
-    medium: 'System',
-    semiBold: 'System',
-    bold: 'System',
-  },
-  android: {
-    regular: 'sans-serif',
-    medium: 'sans-serif-medium',
-    semiBold: 'sans-serif-medium',
-    bold: 'sans-serif',
-  },
-  web: {
-    regular: 'system-ui',
-    medium: 'system-ui',
-    semiBold: 'system-ui',
-    bold: 'system-ui',
-  },
-  default: {
-    regular: 'System',
-    medium: 'System',
-    semiBold: 'System',
-    bold: 'System',
-  },
-});
+
+// Updated FontFamily to use Google Fonts
+export const FontFamily = {
+  regular: 'BeVietnamPro-Regular',
+  medium: 'BeVietnamPro-Medium',
+  semiBold: 'BeVietnamPro-SemiBold',
+  bold: 'BeVietnamPro-Bold',
+  regularItalic: 'BeVietnamPro-Regular-Italic',
+  mediumItalic: 'BeVietnamPro-Medium-Italic',
+};
 
 // Font weights to be used with fontWeight style property
 export const FontWeight = {
