@@ -10,33 +10,16 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 
 // Import types mới
-import { StatisticData, SpendingSummary, Transaction } from '@/types'; 
+import { StatisticData, SpendingSummary, Transaction } from '@/types';
+import { useApi } from '@/hooks/useApi';
+import { useDatabase } from '@/hooks/useDatabase'; 
 
 // Default category if none available; we'll derive tabs from data at runtime
 const DEFAULT_CATEGORY_TABS = ['Tất Cả'];
 
-// Tính toán lại totalSpent cho Mock Data: (500k + 1.5M + 50k) = 2.050.000
-const MOCK_TOTAL_SPENT = 2050000; 
+// Remove mock data - use only real data from database
 
-const mockStatisticData: StatisticData = {
-  totalSpent: 2999000,
-  transactions: [
-    // Giao dịch Chi Tiêu
-    { id: 't1', type: 'expense', category: 'Ăn Uống', amount: -500000, description: 'Hát Kara', date: '15/10/2025' },
-    { id: 't2', type: 'expense', category: 'Siêu Thị', amount: -1500000, description: 'Mua sắm gia đình', date: '14/10/2025' },
-    { id: 't3', type: 'expense', category: 'Di Chuyển', amount: -50000, description: 'Grab đi làm', date: '13/10/2025' },
-    // Thêm một giao dịch Thu Nhập để kiểm tra logic lọc
-    { id: 't4', type: 'income', category: 'Lương', amount: 20000000, description: 'Lương tháng 10', date: '01/10/2025' },
-  ],
-  topSpending: [
-    { category: 'Ăn Uống', percentage: 35, spent: 5320000 },
-    { category: 'Di Chuyển', percentage: 20, spent: 3040000 },
-    { category: 'Quà tặng', percentage: 15, spent: 2240000 },
-  ],
-  insight: 'Gợi ý mặc định: Cố gắng giảm 10% chi tiêu nơi mua sắm.',
-};
-
-// Mock Gemini Insight function
+// Mock Gemini Insight function (fallback)
 const fetchInsightFromGemini = async (topCategory: SpendingSummary): Promise<string> => {
   // Logic Gemini:
   const spentIncrease = 570000;
@@ -51,7 +34,7 @@ const fetchInsightFromGemini = async (topCategory: SpendingSummary): Promise<str
 
 const SpendingItem = ({ transaction }: { transaction: Transaction }) => {
   // Lấy giá trị tuyệt đối để hiển thị số tiền chi tiêu
-  const displayAmount = transaction.amount;
+  const displayAmount = typeof transaction.amount === 'number' ? transaction.amount : 0;
 
   // Chỉ hiển thị giao dịch chi tiêu
   if (transaction.type === 'income') return null;
@@ -74,10 +57,11 @@ const SpendingItem = ({ transaction }: { transaction: Transaction }) => {
   );
 };
 
-// ... SpendingInsight component (Không thay đổi) ...
-const SpendingInsight = ({ topSpending }: { topSpending: SpendingSummary }) => {
+// SpendingInsight component with API integration
+const SpendingInsight = ({ topSpending, totalSpent }: { topSpending: SpendingSummary; totalSpent: number }) => {
   const [insight, setInsight] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const { getInsight } = useApi();
 
   useEffect(() => {
     let mounted = true;
@@ -85,18 +69,17 @@ const SpendingInsight = ({ topSpending }: { topSpending: SpendingSummary }) => {
       if (!topSpending) return;
       setIsLoading(true);
       try {
-        // Try backend /insight endpoint first
-        const res = await fetch('http://localhost:3000/insight', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ category: topSpending.category, spent: topSpending.spent, percentage: topSpending.percentage, totalSpent: MOCK_TOTAL_SPENT }),
-        });
-        if (res.ok) {
-          const json = await res.json();
-          if (mounted && json?.insight) {
-            setInsight(json.insight);
-            return;
-          }
+        // Try backend /insight endpoint first using useApi hook
+        const response = await getInsight(
+          topSpending.category, 
+          topSpending.spent, 
+          topSpending.percentage, 
+          totalSpent
+        );
+        
+        if (response.success && response.data?.insight && mounted) {
+          setInsight(response.data.insight);
+          return;
         }
 
         // Fallback to local generator
@@ -112,7 +95,7 @@ const SpendingInsight = ({ topSpending }: { topSpending: SpendingSummary }) => {
 
     loadInsight();
     return () => { mounted = false; };
-  }, [topSpending]);
+  }, [topSpending, totalSpent]);
   
   const renderInsightText = (text: string) => {
     const parts = text.split(/(\*\*.*?\*\*)/g).filter(Boolean);
@@ -151,9 +134,55 @@ const SpendingInsight = ({ topSpending }: { topSpending: SpendingSummary }) => {
 // --- Main Screen ---
 
 export default function StatisticScreen() {
-  const [data, setData] = useState<StatisticData>(mockStatisticData);
   const [selectedCategory, setSelectedCategory] = useState<string>('Tất Cả');
   const [showAllTransactions, setShowAllTransactions] = useState(false);
+  
+  // Use centralized database context
+  const { transactions: apiTransactions, stats, loading } = useDatabase();
+  
+  // Convert API transactions to UI format and calculate statistics
+  const data = useMemo(() => {
+    if (!apiTransactions || !Array.isArray(apiTransactions) || !stats) {
+      return {
+        totalSpent: 0,
+        transactions: [],
+        topSpending: [],
+        insight: ''
+      };
+    }
+
+    // Use the already converted UI transactions with consistent date format
+    const uiTransactions: Transaction[] = apiTransactions.map(t => ({
+      ...t,
+      date: t.date ? new Date(t.date).toLocaleDateString('vi-VN') : new Date().toLocaleDateString('vi-VN')
+    }));
+
+    // Calculate top spending categories using UI transactions
+    const expenseTransactions = uiTransactions.filter(t => t.type === 'expense');
+    const categorySpending: Record<string, number> = {};
+    
+    expenseTransactions.forEach(t => {
+      const category = t.category || 'Other';
+      const amount = typeof t.amount === 'number' ? Math.abs(t.amount) : 0;
+      categorySpending[category] = (categorySpending[category] || 0) + amount;
+    });
+
+    const topSpending = Object.entries(categorySpending)
+      .map(([category, spent]) => ({
+        category: category || 'Unknown',
+        spent: typeof spent === 'number' ? spent : 0,
+        percentage: stats.totalExpenses > 0 ? Math.round((spent / stats.totalExpenses) * 100) : 0
+      }))
+      .sort((a, b) => (b.spent || 0) - (a.spent || 0))
+      .slice(0, 3);
+
+    return {
+      totalSpent: stats.totalExpenses || 0,
+      transactions: uiTransactions,
+      topSpending: topSpending,
+      insight: '' // Will be loaded by SpendingInsight component
+    };
+  }, [apiTransactions, stats]);
 
   // Responsive helpers
   const { width } = useWindowDimensions();
@@ -163,21 +192,21 @@ export default function StatisticScreen() {
   // build category tabs from data
   const categoryTabs = useMemo(() => {
     const cats = new Set<string>();
-    data.transactions.forEach((t) => cats.add(t.category || 'Other'));
+    data.transactions.forEach((t: Transaction) => cats.add(t.category || 'Other'));
     return [...DEFAULT_CATEGORY_TABS, ...Array.from(cats).filter(c => c && c !== 'Tất Cả')];
   }, [data.transactions]);
 
   // Lọc chỉ lấy giao dịch chi tiêu VÀ theo tab đã chọn
   const filteredTransactions = useMemo(() => {
     // 1. Lọc tất cả các giao dịch là 'expense'
-    const expenses = data.transactions.filter(t => t.type === 'expense');
+    const expenses = data.transactions.filter((t: Transaction) => t.type === 'expense');
     if (selectedCategory === 'Tất Cả') return expenses;
-    return expenses.filter(t => t.category === selectedCategory);
+    return expenses.filter((t: Transaction) => t.category === selectedCategory);
   }, [data.transactions, selectedCategory]);
 
   const displayedTransactions = showAllTransactions ? filteredTransactions : filteredTransactions.slice(0, 3);
-  const totalSpentFormatted = formatCurrency(data.totalSpent);
-  const topSpendingCategory = data.topSpending[0];
+  const totalSpentFormatted = formatCurrency(typeof data.totalSpent === 'number' ? data.totalSpent : 0);
+  const topSpendingCategory = data.topSpending && data.topSpending.length > 0 ? data.topSpending[0] : null;
 
   return (
     <ThemedView style={styles.container}>
@@ -193,56 +222,85 @@ export default function StatisticScreen() {
             </ThemedText>
           </View>
 
-          {/* Tabs */}
-          <View style={styles.tabsContainer}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingVertical: 8 }}>
-              {categoryTabs.map((tab) => (
-                <Pressable
-                  key={tab}
-                  style={[
-                    styles.tabButton,
-                    selectedCategory === tab && styles.tabSelected,
-                    { paddingHorizontal: Math.round(12 * scale), paddingVertical: Math.round(6 * scale) }
-                  ]}
-                  onPress={() => setSelectedCategory(tab)}
-                >
-                  <ThemedText style={[styles.tabText, { fontSize: Math.round(14 * scale) }, selectedCategory === tab ? styles.tabTextSelected : styles.tabTextUnselected]}>
-                    {tab}
-                  </ThemedText>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </View>
-
-          {/* Transactions */}
-          {displayedTransactions.map(transaction => (
-            <View key={transaction.id} style={{ marginBottom: Math.round(12 * scale) }}>
-              <SpendingItem transaction={transaction} />
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ThemedText style={styles.loadingText}>Loading statistics...</ThemedText>
             </View>
-          ))}
-          {filteredTransactions.length > 3 && (
-            <TouchableOpacity style={styles.viewAllButton} onPress={() => setShowAllTransactions(s => !s)}>
-              <ThemedText style={[styles.viewAllText, { fontSize: Math.round(14 * scale) }]}>{showAllTransactions ? 'Show less' : 'View All'}</ThemedText>
-            </TouchableOpacity>
-          )}
+          ) : data.transactions.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <ThemedText style={styles.emptyTitle}>No Transactions Yet</ThemedText>
+              <ThemedText style={styles.emptyText}>
+                Start adding transactions to see your spending statistics here.
+              </ThemedText>
+            </View>
+          ) : (
+            <>
+              {/* Tabs */}
+              <View style={styles.tabsContainer}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingVertical: 8 }}>
+                  {categoryTabs.map((tab) => (
+                    <Pressable
+                      key={tab}
+                      style={[
+                        styles.tabButton,
+                        selectedCategory === tab && styles.tabSelected,
+                        { paddingHorizontal: Math.round(12 * scale), paddingVertical: Math.round(6 * scale) }
+                      ]}
+                      onPress={() => setSelectedCategory(tab)}
+                    >
+                      <ThemedText style={[styles.tabText, { fontSize: Math.round(14 * scale) }, selectedCategory === tab ? styles.tabTextSelected : styles.tabTextUnselected]}>
+                        {tab}
+                      </ThemedText>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
 
-          {/* Top 3 */}
-          <ThemedText style={[styles.sectionTitle, { fontSize: Math.round(24 * scale), marginTop: Math.round(40 * scale) }]}>Top 3 chi tiêu</ThemedText>
-          <View style={styles.topSpendingContainer}>
-            {data.topSpending.map((item, index) => (
-              <ExpoLinearGradient key={index} colors={['#B9B4FF', '#EDE9FF']} start={{x:0,y:0}} end={{x:1,y:0}} style={[styles.topSpendingGradientItem, { padding: Math.round(12 * scale), borderRadius: Math.round(12 * scale) }]}>
-                <View style={[styles.topSpendingInner, { alignItems: 'center' }]}>
-                  <ThemedText style={[styles.topSpendingRank, { fontSize: Math.round(16 * scale) }]}>{index + 1}.</ThemedText>
-                  <View style={{ flex: 1, marginLeft: Math.round(10 * scale) }}>
-                    <ThemedText style={[styles.topSpendingCategory, { fontSize: Math.round(15 * scale) }]}>{item.category} {item.percentage}%</ThemedText>
-                  </View>
-                  <ThemedText style={[styles.topSpendingAmount, { fontSize: Math.round(15 * scale) }]}>-{formatCurrency(item.spent)} VND</ThemedText>
+              {/* Transactions */}
+              {displayedTransactions.length > 0 ? (
+                <>
+                  {displayedTransactions.map((transaction: Transaction) => (
+                    <View key={transaction.id} style={{ marginBottom: Math.round(12 * scale) }}>
+                      <SpendingItem transaction={transaction} />
+                    </View>
+                  ))}
+                  {filteredTransactions.length > 3 && (
+                    <TouchableOpacity style={styles.viewAllButton} onPress={() => setShowAllTransactions(s => !s)}>
+                      <ThemedText style={[styles.viewAllText, { fontSize: Math.round(14 * scale) }]}>{showAllTransactions ? 'Show less' : 'View All'}</ThemedText>
+                    </TouchableOpacity>
+                  )}
+                </>
+              ) : (
+                <View style={styles.noTransactionsContainer}>
+                  <ThemedText style={styles.noTransactionsText}>
+                    No transactions in this category yet.
+                  </ThemedText>
                 </View>
-              </ExpoLinearGradient>
-            ))}
-          </View>
+              )}
 
-          <SpendingInsight topSpending={topSpendingCategory} />
+              {/* Top 3 */}
+              {data.topSpending.length > 0 && (
+                <>
+                  <ThemedText style={[styles.sectionTitle, { fontSize: Math.round(24 * scale), marginTop: Math.round(40 * scale) }]}>Top 3 chi tiêu</ThemedText>
+                  <View style={styles.topSpendingContainer}>
+                    {data.topSpending.map((item: SpendingSummary, index: number) => (
+                      <ExpoLinearGradient key={index} colors={['#B9B4FF', '#EDE9FF']} start={{x:0,y:0}} end={{x:1,y:0}} style={[styles.topSpendingGradientItem, { padding: Math.round(12 * scale), borderRadius: Math.round(12 * scale) }]}>
+                        <View style={[styles.topSpendingInner, { alignItems: 'center' }]}>
+                          <ThemedText style={[styles.topSpendingRank, { fontSize: Math.round(16 * scale) }]}>{index + 1}.</ThemedText>
+                          <View style={{ flex: 1, marginLeft: Math.round(10 * scale) }}>
+                            <ThemedText style={[styles.topSpendingCategory, { fontSize: Math.round(15 * scale) }]}>{item.category || 'Unknown'} {item.percentage || 0}%</ThemedText>
+                          </View>
+                          <ThemedText style={[styles.topSpendingAmount, { fontSize: Math.round(15 * scale) }]}>-{formatCurrency(typeof item.spent === 'number' ? item.spent : 0)} VND</ThemedText>
+                        </View>
+                      </ExpoLinearGradient>
+                    ))}
+                  </View>
+                </>
+              )}
+
+              {topSpendingCategory && <SpendingInsight topSpending={topSpendingCategory} totalSpent={typeof data.totalSpent === 'number' ? data.totalSpent : 0} />}
+            </>
+          )}
 
           <View style={{ height: Math.round(100 * scale) }} />
         </ScrollView>
@@ -474,5 +532,43 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 50,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#666',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 80,
+    paddingHorizontal: 40,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#666',
+    marginBottom: 12,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#888',
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  noTransactionsContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+  },
+  noTransactionsText: {
+    fontSize: 16,
+    color: '#888',
+    textAlign: 'center',
   },
 });

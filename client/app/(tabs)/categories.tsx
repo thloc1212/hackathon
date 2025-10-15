@@ -1,5 +1,5 @@
 import { Platform, StyleSheet, View, Pressable, ScrollView, TextInput, Modal, TouchableOpacity, Alert } from 'react-native';
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import Svg, { Path, G } from 'react-native-svg';
 
 import { ThemedText } from '@/components/themed-text';
@@ -7,6 +7,7 @@ import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { SpendingCategory, SpendingData } from '@/types';
 import { formatCurrency } from '@/utils/formatters';
+import { useDatabase } from '@/hooks/useDatabase';
 
 // Hàm chuyển đổi độ sang radian
 const polarToCartesian = (centerX: number, centerY: number, radius: number, angleInDegrees: number) => {
@@ -298,21 +299,52 @@ const SpendingCard = ({
 };
 
 export default function CategoriesScreen() {
-  const defaultCategories = [
-    { id: '1', name: 'Ăn Uống', budget: 200000, spent: 150000, color: COLORS[0] },
-    { id: '2', name: 'Di Chuyển', budget: 200000, spent: 80000, color: COLORS[1] },
-    { id: '3', name: 'Mua Sắm', budget: 200000, spent: 120000, color: COLORS[2] },
-    { id: '4', name: 'Giải Trí', budget: 200000, spent: 90000, color: COLORS[3] },
-  ];
+  // Get real data from database context
+  const { transactions, stats, loading } = useDatabase();
 
-  const defaultBudget = defaultCategories.reduce((sum, cat) => sum + cat.budget, 0);
+  // Generate categories from real transaction data
+  const realCategories = useMemo(() => {
+    if (!stats?.categorySummary || Object.keys(stats.categorySummary).length === 0) {
+      // Return empty array if no data yet
+      return [];
+    }
+
+    const categorySpending = stats.categorySummary;
+    const generatedCategories: SpendingCategory[] = [];
+    let colorIndex = 0;
+
+    // Create categories from real spending data
+    Object.entries(categorySpending).forEach(([categoryName, spent]) => {
+      if (spent > 0) { // Only include categories with spending
+        generatedCategories.push({
+          id: categoryName.toLowerCase().replace(/\s+/g, '-'),
+          name: categoryName,
+          budget: Math.max(spent * 1.5, 100000), // Set budget to 150% of spending or minimum 100k
+          spent: spent,
+          color: COLORS[colorIndex % COLORS.length]
+        });
+        colorIndex++;
+      }
+    });
+
+    return generatedCategories;
+  }, [stats]);
 
   const [spendingData, setSpendingData] = useState<SpendingData>({
-    totalBudget: defaultBudget,
-    categories: defaultCategories,
+    totalBudget: 0,
+    categories: [],
   });
   const [modalVisible, setModalVisible] = useState(false);
-  const [editingCategory, setEditingCategory] = useState<SpendingCategory>(defaultCategories[0]);
+  const [editingCategory, setEditingCategory] = useState<SpendingCategory | null>(null);
+
+  // Update spending data when real data changes
+  useEffect(() => {
+    const totalBudget = realCategories.reduce((sum, cat) => sum + cat.budget, 0);
+    setSpendingData({
+      totalBudget,
+      categories: realCategories,
+    });
+  }, [realCategories]);
 
   const updateTotalBudget = useCallback((categories: SpendingCategory[]) => {
     const total = categories.reduce((acc, cat) => acc + cat.budget, 0);
@@ -392,6 +424,8 @@ export default function CategoriesScreen() {
   };
 
   const handleEditSpent = (categoryData: Omit<SpendingCategory, 'id'>) => {
+    if (!editingCategory) return;
+    
     setSpendingData(prev => ({
       ...prev,
       categories: prev.categories.map(cat => 
@@ -416,30 +450,45 @@ export default function CategoriesScreen() {
       </View>
       
       <ScrollView style={styles.content}>
-        <BudgetProgress categories={spendingData.categories} />
-        
-        <View style={styles.categoriesContainer}>
-          {spendingData.categories.map(category => (
-            <SpendingCard
-              key={category.id}
-              category={category}
-              onEdit={openEditModal}
-            />
-          ))}
-        </View>
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ThemedText style={styles.loadingText}>Loading categories...</ThemedText>
+          </View>
+        ) : spendingData.categories.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <ThemedText style={styles.emptyTitle}>No Categories Yet</ThemedText>
+            <ThemedText style={styles.emptyText}>
+              Start adding transactions to see your spending categories here.
+            </ThemedText>
+          </View>
+        ) : (
+          <>
+            <BudgetProgress categories={spendingData.categories} />
+            
+            <View style={styles.categoriesContainer}>
+              {spendingData.categories.map(category => (
+                <SpendingCard
+                  key={category.id}
+                  category={category}
+                  onEdit={openEditModal}
+                />
+              ))}
+            </View>
+          </>
+        )}
       </ScrollView>
 
-      <CategoryModal
-        visible={modalVisible}
-        onClose={() => setModalVisible(false)}
-        onSave={handleEditSpent}
-        initialData={editingCategory}
-      />
+      {editingCategory && (
+        <CategoryModal
+          visible={modalVisible}
+          onClose={() => setModalVisible(false)}
+          onSave={handleEditSpent}
+          initialData={editingCategory}
+        />
+      )}
     </ThemedView>
   );
 }
-
-import { useEffect } from 'react';
 
 const styles = StyleSheet.create({
   categoryInfo: {
@@ -811,5 +860,34 @@ const styles = StyleSheet.create({
   },
   selectedColor: {
     borderColor: '#000',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 50,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#666',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 80,
+    paddingHorizontal: 40,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#666',
+    marginBottom: 12,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#888',
+    textAlign: 'center',
+    lineHeight: 24,
   },
 });

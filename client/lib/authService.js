@@ -1,9 +1,21 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
-const SERVER_URL = Platform.OS === 'android' 
-  ? 'http://10.0.2.2:3000' 
-  : 'http://localhost:3000';
+// Get server URL from environment variables
+const getServerUrl = () => {
+  const host = process.env.EXPO_PUBLIC_SERVER_HOST || 'localhost';
+  const port = process.env.EXPO_PUBLIC_SERVER_PORT || '3000';
+  
+  if (Platform.OS === 'android') {
+    // For Android emulator, localhost needs to be mapped to 10.0.2.2
+    const androidHost = host === 'localhost' ? '10.0.2.2' : host;
+    return `http://${androidHost}:${port}`;
+  }
+  
+  return `http://${host}:${port}`;
+};
+
+const SERVER_URL = getServerUrl();
 
 const SESSION_KEY = 'user_session';
 
