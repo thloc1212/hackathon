@@ -29,6 +29,7 @@ export default function HomePage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [signUpEmail, setSignUpEmail] = useState('');
+  const [signUpName, setSignUpName] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [signUpPassword, setSignUpPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -58,6 +59,11 @@ export default function HomePage() {
 
   const handleCloseSignUpModal = () => {
     setSignUpError('');
+    setSignUpName('');
+    setSignUpEmail('');
+    setDateOfBirth('');
+    setSignUpPassword('');
+    setConfirmPassword('');
     setShowSignUpModal(false);
   };
 
@@ -101,25 +107,51 @@ export default function HomePage() {
     setIsSignUpLoading(true);
     
     try {
-      if (!signUpEmail || !signUpPassword || !confirmPassword) {
+      // Validate required fields
+      if (!signUpName || !signUpEmail || !signUpPassword || !confirmPassword || !dateOfBirth) {
         setSignUpError('Please fill in all fields');
         setIsSignUpLoading(false);
         return;
       }
 
+      // Validate name
+      if (signUpName.trim().length < 2) {
+        setSignUpError('Name must be at least 2 characters long');
+        setIsSignUpLoading(false);
+        return;
+      }
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(signUpEmail)) {
+        setSignUpError('Please enter a valid email address');
+        setIsSignUpLoading(false);
+        return;
+      }
+
+      // Validate date of birth format (YYYY-MM-DD or DD/MM/YYYY or MM/DD/YYYY)
+      const dateRegex = /^(\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4})$/;
+      if (!dateRegex.test(dateOfBirth)) {
+        setSignUpError('Please enter date in format YYYY-MM-DD or DD/MM/YYYY');
+        setIsSignUpLoading(false);
+        return;
+      }
+
+      // Validate password match
       if (signUpPassword !== confirmPassword) {
         setSignUpError('Passwords do not match');
         setIsSignUpLoading(false);
         return;
       }
 
+      // Validate password length
       if (signUpPassword.length < 6) {
         setSignUpError('Password must be at least 6 characters long');
         setIsSignUpLoading(false);
         return;
       }
 
-      const result = await AuthService.signup(signUpEmail, signUpPassword, dateOfBirth);
+      const result = await AuthService.signup(signUpName, signUpEmail, signUpPassword, dateOfBirth);
 
       // Try to auto sign in after signup so user immediately sees tabs/home
       try {
@@ -132,6 +164,7 @@ export default function HomePage() {
       }
 
       // Clear form and close modal
+      setSignUpName('');
       setSignUpEmail('');
       setDateOfBirth('');
       setSignUpPassword('');
@@ -272,6 +305,7 @@ export default function HomePage() {
                   onChangeText={setEmail}
                   placeholder=""
                   keyboardType="email-address"
+                  autoCapitalize="none"
                 />
               </View>
 
@@ -327,6 +361,18 @@ export default function HomePage() {
             <View style={styles.signInCard}>
               <Text style={styles.signInTitle}>Sign Up</Text>
               
+              {/* Name Input */}
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Name</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={signUpName}
+                  onChangeText={setSignUpName}
+                  placeholder=""
+                  autoCapitalize="words"
+                />
+              </View>
+
               {/* Email Input */}
               <View style={styles.inputContainer}>
                 <Text style={styles.inputLabel}>Email</Text>
@@ -336,6 +382,7 @@ export default function HomePage() {
                   onChangeText={setSignUpEmail}
                   placeholder=""
                   keyboardType="email-address"
+                  autoCapitalize="none"
                 />
               </View>
 
@@ -346,7 +393,8 @@ export default function HomePage() {
                   style={styles.textInput}
                   value={dateOfBirth}
                   onChangeText={setDateOfBirth}
-                  placeholder=""
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor="#9CA3AF"
                 />
               </View>
 

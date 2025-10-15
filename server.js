@@ -66,12 +66,34 @@ app.post('/parse-test', (req, res) => {
 // Sign Up
 app.post('/auth/signup', async (req, res) => {
   try {
-    const { email, password, dateOfBirth } = req.body;
+    const { name, email, password, dateOfBirth } = req.body;
 
     // Validate required fields
-    if (!email || !password) {
+    if (!name || !email || !password) {
       return res.status(400).json({ 
-        error: 'Email and password are required' 
+        error: 'Name, email, and password are required' 
+      });
+    }
+
+    // Validate name length
+    if (name.trim().length < 2) {
+      return res.status(400).json({ 
+        error: 'Name must be at least 2 characters long' 
+      });
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ 
+        error: 'Please enter a valid email address' 
+      });
+    }
+
+    // Validate password length
+    if (password.length < 6) {
+      return res.status(400).json({ 
+        error: 'Password must be at least 6 characters long' 
       });
     }
 
@@ -88,7 +110,8 @@ app.post('/auth/signup', async (req, res) => {
 
     // Create user
     const newUser = await database.createUser({
-      email,
+      name: name.trim(),
+      email: email.toLowerCase().trim(),
       password: hashedPassword,
       dateOfBirth: dateOfBirth || null
     });

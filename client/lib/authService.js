@@ -27,7 +27,7 @@ class AuthService {
     this._listeners = [];
   }
 
-  async signup(email, password, dateOfBirth) {
+  async signup(name, email, password, dateOfBirth) {
     try {
       const response = await fetch(`${SERVER_URL}/auth/signup`, {
         method: 'POST',
@@ -35,6 +35,7 @@ class AuthService {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          name,
           email,
           password,
           dateOfBirth,
