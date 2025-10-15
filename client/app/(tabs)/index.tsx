@@ -7,7 +7,10 @@ import {
   Dimensions,
   Modal,
   TextInput,
-  Alert 
+  Alert,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform 
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Ellipse, Defs, RadialGradient, Stop } from 'react-native-svg';
@@ -292,58 +295,72 @@ export default function HomePage() {
       >
         <Pressable style={styles.modalOverlay} onPress={handleCloseSignInModal}>
           <Pressable style={styles.modalContainer} onPress={(e) => e.stopPropagation()}>
-            {/* Modal Content */}
-            <View style={styles.signInCard}>
-              <Text style={styles.signInTitle}>Sign in</Text>
-              
-              {/* Email Input */}
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Email</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={email}
-                  onChangeText={setEmail}
-                  placeholder=""
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
-              </View>
-
-              {/* Password Input */}
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Password</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={password}
-                  onChangeText={setPassword}
-                  placeholder=""
-                  secureTextEntry={true}
-                />
-              </View>
-
-              {/* Forgot Password */}
-              <Pressable style={styles.forgotPasswordContainer}>
-                <Text style={styles.forgotPasswordText}>Forgot password?</Text>
-              </Pressable>
-
-              {/* Error Message */}
-              {signInError ? (
-                <View style={styles.errorContainer}>
-                  <Text style={styles.errorText}>{signInError}</Text>
-                </View>
-              ) : null}
-
-              {/* Sign In Button */}
-              <Pressable 
-                style={[styles.signInModalButton, isSignInLoading && styles.buttonDisabled]} 
-                onPress={handleSignInSubmit}
-                disabled={isSignInLoading}
+            <KeyboardAvoidingView 
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              style={{ flex: 1 }}
+            >
+              <ScrollView 
+                contentContainerStyle={styles.scrollContent}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
               >
-                <Text style={styles.signInModalButtonText}>
-                  {isSignInLoading ? 'Signing in...' : 'Sign in'}
-                </Text>
-              </Pressable>
-            </View>
+                {/* Modal Content */}
+                <View style={styles.signInCard}>
+                  <Text style={styles.signInTitle}>Sign in</Text>
+                  
+                  {/* Email Input */}
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.inputLabel}>Email</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      value={email}
+                      onChangeText={setEmail}
+                      placeholder=""
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                    />
+                  </View>
+
+                  {/* Password Input */}
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.inputLabel}>Password</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      value={password}
+                      onChangeText={setPassword}
+                      placeholder=""
+                      secureTextEntry={true}
+                    />
+                  </View>
+
+                  {/* Forgot Password */}
+                  <Pressable style={styles.forgotPasswordContainer}>
+                    <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+                  </Pressable>
+
+                  {/* Error Message */}
+                  {signInError ? (
+                    <View style={styles.errorContainer}>
+                      <Text style={styles.errorText}>{signInError}</Text>
+                    </View>
+                  ) : null}
+
+                  {/* Sign In Button */}
+                  <Pressable 
+                    style={[styles.signInModalButton, isSignInLoading && styles.buttonDisabled]} 
+                    onPress={handleSignInSubmit}
+                    disabled={isSignInLoading}
+                  >
+                    <Text style={styles.signInModalButtonText}>
+                      {isSignInLoading ? 'Signing in...' : 'Sign in'}
+                    </Text>
+                  </Pressable>
+                  
+                  {/* Bottom spacing for mobile */}
+                  <View style={styles.bottomSpacer} />
+                </View>
+              </ScrollView>
+            </KeyboardAvoidingView>
           </Pressable>
         </Pressable>
       </Modal>
@@ -357,89 +374,103 @@ export default function HomePage() {
       >
         <Pressable style={styles.modalOverlay} onPress={handleCloseSignUpModal}>
           <Pressable style={styles.modalContainer} onPress={(e) => e.stopPropagation()}>
-            {/* Modal Content */}
-            <View style={styles.signInCard}>
-              <Text style={styles.signInTitle}>Sign Up</Text>
-              
-              {/* Name Input */}
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Name</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={signUpName}
-                  onChangeText={setSignUpName}
-                  placeholder=""
-                  autoCapitalize="words"
-                />
-              </View>
-
-              {/* Email Input */}
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Email</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={signUpEmail}
-                  onChangeText={setSignUpEmail}
-                  placeholder=""
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
-              </View>
-
-              {/* Date of Birth Input */}
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Date of birth</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={dateOfBirth}
-                  onChangeText={setDateOfBirth}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor="#9CA3AF"
-                />
-              </View>
-
-              {/* Password Input */}
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Password</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={signUpPassword}
-                  onChangeText={setSignUpPassword}
-                  placeholder=""
-                  secureTextEntry={true}
-                />
-              </View>
-
-              {/* Confirm Password Input */}
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Confirm Password</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  placeholder=""
-                  secureTextEntry={true}
-                />
-              </View>
-
-              {/* Error Message */}
-              {signUpError ? (
-                <View style={styles.errorContainer}>
-                  <Text style={styles.errorText}>{signUpError}</Text>
-                </View>
-              ) : null}
-
-              {/* Sign Up Button */}
-              <Pressable 
-                style={[styles.signInModalButton, isSignUpLoading && styles.buttonDisabled]} 
-                onPress={handleSignUpSubmit}
-                disabled={isSignUpLoading}
+            <KeyboardAvoidingView 
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              style={{ flex: 1 }}
+            >
+              <ScrollView 
+                contentContainerStyle={styles.scrollContent}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
               >
-                <Text style={styles.signInModalButtonText}>
-                  {isSignUpLoading ? 'Creating account...' : 'Sign up'}
-                </Text>
-              </Pressable>
-            </View>
+                {/* Modal Content */}
+                <View style={styles.signInCard}>
+                  <Text style={styles.signInTitle}>Sign Up</Text>
+                  
+                  {/* Name Input */}
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.inputLabel}>Name</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      value={signUpName}
+                      onChangeText={setSignUpName}
+                      placeholder=""
+                      autoCapitalize="words"
+                    />
+                  </View>
+
+                  {/* Email Input */}
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.inputLabel}>Email</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      value={signUpEmail}
+                      onChangeText={setSignUpEmail}
+                      placeholder=""
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                    />
+                  </View>
+
+                  {/* Date of Birth Input */}
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.inputLabel}>Date of birth</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      value={dateOfBirth}
+                      onChangeText={setDateOfBirth}
+                      placeholder="YYYY-MM-DD"
+                      placeholderTextColor="#9CA3AF"
+                    />
+                  </View>
+
+                  {/* Password Input */}
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.inputLabel}>Password</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      value={signUpPassword}
+                      onChangeText={setSignUpPassword}
+                      placeholder=""
+                      secureTextEntry={true}
+                    />
+                  </View>
+
+                  {/* Confirm Password Input */}
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.inputLabel}>Confirm Password</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      value={confirmPassword}
+                      onChangeText={setConfirmPassword}
+                      placeholder=""
+                      secureTextEntry={true}
+                    />
+                  </View>
+
+                  {/* Error Message */}
+                  {signUpError ? (
+                    <View style={styles.errorContainer}>
+                      <Text style={styles.errorText}>{signUpError}</Text>
+                    </View>
+                  ) : null}
+
+                  {/* Sign Up Button */}
+                  <Pressable 
+                    style={[styles.signInModalButton, isSignUpLoading && styles.buttonDisabled]} 
+                    onPress={handleSignUpSubmit}
+                    disabled={isSignUpLoading}
+                  >
+                    <Text style={styles.signInModalButtonText}>
+                      {isSignUpLoading ? 'Creating account...' : 'Sign up'}
+                    </Text>
+                  </Pressable>
+                  
+                  {/* Bottom spacing for mobile */}
+                  <View style={styles.bottomSpacer} />
+                </View>
+              </ScrollView>
+            </KeyboardAvoidingView>
           </Pressable>
         </Pressable>
       </Modal>
@@ -654,5 +685,12 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.6,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 20,
+  },
+  bottomSpacer: {
+    height: 40,
   },
 });
