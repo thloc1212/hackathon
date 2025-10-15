@@ -21,7 +21,6 @@ import { Colors, FontFamily, FontWeight } from '@/constants/theme';
 import TransactionItem from '@/components/TransactionItem';
 import { Transaction, GeminiTransactionResponse } from '@/types';
 import { formatCurrency } from '@/utils/formatters';
-import AuthService from '@/lib/authService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -29,7 +28,7 @@ const { width, height } = Dimensions.get('window');
 const SERVER_URL =
   Platform.OS === 'android'
     ? 'http://10.0.2.2:3000' // Android emulator
-    : 'http://localhost:3000'; // iOS simulator
+    : 'http://10.126.7.73:3000'; // iOS simulator
 
 // Mock financial data
 const CURRENT_BALANCE = 2450000; // VND
@@ -85,10 +84,9 @@ interface HomeScreenProps {
     dateOfBirth?: string;
     createdAt: string;
   };
-  onLogout: () => void;
 }
 
-export default function HomeScreen({ user, onLogout }: HomeScreenProps) {
+export default function HomeScreen({ user }: HomeScreenProps) {
   const colorScheme = 'light'; // Force light mode
   const colors = Colors[colorScheme];
   const [userName, setUserName] = useState('');
@@ -183,15 +181,7 @@ export default function HomeScreen({ user, onLogout }: HomeScreenProps) {
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      await AuthService.signout();
-      Alert.alert('Success', 'Logged out successfully');
-      onLogout();
-    } catch (error) {
-      Alert.alert('Error', 'Failed to logout');
-    }
-  };
+
 
   return (
     <SafeAreaView style={[dashboardStyles.container, { backgroundColor: '#F0F3F8' }]}>
@@ -206,9 +196,7 @@ export default function HomeScreen({ user, onLogout }: HomeScreenProps) {
             {userName}!
           </Text>
           
-          <Pressable style={dashboardStyles.logoutButton} onPress={handleLogout}>
-            <Text style={dashboardStyles.logoutText}>Logout</Text>
-          </Pressable>
+          {/* Logout moved to Profile screen */}
         </View>
 
         {/* Balance Block with Linear Gradient */}

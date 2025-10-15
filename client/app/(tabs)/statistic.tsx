@@ -86,7 +86,7 @@ const SpendingInsight = ({ topSpending }: { topSpending: SpendingSummary }) => {
       setIsLoading(true);
       try {
         // Try backend /insight endpoint first
-        const res = await fetch('http://localhost:3000/insight', {
+        const res = await fetch('http://10.126.7.73:3000/insight', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ category: topSpending.category, spent: topSpending.spent, percentage: topSpending.percentage, totalSpent: MOCK_TOTAL_SPENT }),

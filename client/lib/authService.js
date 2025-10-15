@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 
 const SERVER_URL = Platform.OS === 'android' 
   ? 'http://10.0.2.2:3000' 
-  : 'http://localhost:3000';
+  : 'http://10.126.7.73:3000';
 
 const SESSION_KEY = 'user_session';
 
