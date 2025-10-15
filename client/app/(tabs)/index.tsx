@@ -13,14 +13,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Ellipse, Defs, RadialGradient, Stop } from 'react-native-svg';
 import AuthService from '../../lib/authService';
 import RegistrationSuccess from '../../components/RegistrationSuccess';
-import HomeScreen from './home';
 
 const { width, height } = Dimensions.get('window');
 
 export default function HomePage() {
-  // Authentication state
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null);
+  // Authentication state (managed centrally in AuthService)
   const [showRegistrationSuccess, setShowRegistrationSuccess] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState('');
   
@@ -42,21 +39,7 @@ export default function HomePage() {
   const [isSignInLoading, setIsSignInLoading] = useState(false);
   const [isSignUpLoading, setIsSignUpLoading] = useState(false);
 
-  // Check for existing session on app start
-  useEffect(() => {
-    const checkSession = async () => {
-      try {
-        const session = await AuthService.getCurrentUser();
-        if (session) {
-          setCurrentUser(session);
-          setIsAuthenticated(true);
-        }
-      } catch (error) {
-        console.log('No existing session');
-      }
-    };
-    checkSession();
-  }, []);
+  // Note: Root layout handles loading stored session and showing tabs
 
   const handleSignIn = () => {
     setSignInError('');
@@ -84,8 +67,7 @@ export default function HomePage() {
   };
 
   const handleLogout = () => {
-    setIsAuthenticated(false);
-    setCurrentUser(null);
+    // logout is handled in HomeScreen via AuthService; nothing to do here
   };
 
   const handleSignInSubmit = async () => {
@@ -99,13 +81,9 @@ export default function HomePage() {
         return;
       }
 
-      const result = await AuthService.signin(email, password);
+  const result = await AuthService.signin(email, password);
       
-      // Set user and navigate to home screen
-      setCurrentUser(result.user);
-      setIsAuthenticated(true);
-      
-      // Clear form and close modal
+  // Clear form and close modal; RootLayout will detect auth change and show Tabs
       setEmail('');
       setPassword('');
       setSignInError('');
@@ -142,10 +120,17 @@ export default function HomePage() {
       }
 
       const result = await AuthService.signup(signUpEmail, signUpPassword, dateOfBirth);
-      
-      // Store registered email and show success screen
-      setRegisteredEmail(signUpEmail);
-      
+
+      // Try to auto sign in after signup so user immediately sees tabs/home
+      try {
+        await AuthService.signin(signUpEmail, signUpPassword);
+        // success: RootLayout will react to auth change and navigate to home
+      } catch (err) {
+        // if auto sign-in fails, fall back to showing registration success so user can sign in manually
+        setRegisteredEmail(signUpEmail);
+        setShowRegistrationSuccess(true);
+      }
+
       // Clear form and close modal
       setSignUpEmail('');
       setDateOfBirth('');
@@ -153,9 +138,6 @@ export default function HomePage() {
       setConfirmPassword('');
       setSignUpError('');
       setShowSignUpModal(false);
-      
-      // Show registration success screen
-      setShowRegistrationSuccess(true);
       
     } catch (error) {
       setSignUpError((error as Error).message || 'Failed to create account');
@@ -174,15 +156,7 @@ export default function HomePage() {
     );
   }
 
-  // Show home screen if authenticated
-  if (isAuthenticated && currentUser) {
-    return (
-      <HomeScreen 
-        user={currentUser}
-        onLogout={handleLogout}
-      />
-    );
-  }
+
 
   // Show landing page with auth modals
   return (
@@ -262,7 +236,7 @@ export default function HomePage() {
       <View style={styles.content}>
         <Text style={styles.welcomeText}>Welcome Back!</Text>
         <Text style={styles.subtitleText}>
-          "Your daily spending, transformed into{'\n'}meaningful insights with AI."
+          Your daily spending, transformed into{"\n"}meaningful insights with AI.
         </Text>
       </View>
       
