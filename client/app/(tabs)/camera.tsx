@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ReceiptInfo } from '@/types';
@@ -95,24 +96,71 @@ export default function CameraScreen() {
   const processImage = async (imageUri: string) => {
     setIsProcessing(true);
     try {
-      // TODO: Replace this with actual OCR implementation from GitHub
-      // Placeholder processing simulation
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Mock receipt data - will be replaced with actual OCR results
-      const mockReceiptData: ReceiptInfo = {
-        total: 45.67,
-        merchant: 'Sample Store',
-        date: new Date().toLocaleDateString(),
-        items: [
-          { name: 'Coffee', price: 4.50, quantity: 1 },
-          { name: 'Sandwich', price: 8.99, quantity: 1 },
-          { name: 'Water', price: 2.18, quantity: 2 },
-          { name: 'Tax', price: 2.00 },
-        ]
+      // Read file as base64. FileSystem.readAsStringAsync works with file:// URIs.
+      let base64: string | null = null;
+      try {
+        base64 = await FileSystem.readAsStringAsync(imageUri, { encoding: 'base64' as any });
+      } catch (fsErr) {
+        // On Android content:// URIs readAsStringAsync may fail. Fallback to fetch -> blob -> base64
+        try {
+          const resp = await fetch(imageUri);
+          const blob = await resp.blob();
+          const arrayBuffer = await blob.arrayBuffer();
+          const bytes = new Uint8Array(arrayBuffer);
+          let binary = '';
+          for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          base64 = btoa(binary);
+        } catch (fallbackErr) {
+          console.error('Failed to read image as base64', fsErr, fallbackErr);
+          throw new Error('Unable to read image data');
+        }
+      }
+
+      // Guess mime type from extension
+      const guessMimeType = (uri: string) => {
+        const m = uri.match(/\.(\w+)(\?.*)?$/);
+        const ext = m ? m[1].toLowerCase() : '';
+        if (ext === 'png') return 'image/png';
+        if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+        if (ext === 'heic') return 'image/heic';
+        return 'image/jpeg';
       };
 
-      setReceiptData(mockReceiptData);
+      const mimeType = guessMimeType(imageUri);
+
+      // Send to remote parse endpoint
+      const PARSE_URL = 'https://detect-ruby.vercel.app/parse';
+      const resp = await fetch(PARSE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: base64, mimeType }),
+      });
+
+      if (!resp.ok) {
+        const text = await resp.text();
+        console.error('Parse server error', resp.status, text);
+        throw new Error(`Parse server returned ${resp.status}`);
+      }
+
+      const data = await resp.json();
+
+      // Map server response to ReceiptInfo shape
+      const mapped: ReceiptInfo = {
+        total: typeof data.total === 'number' ? data.total : parseFloat(data.total) || 0,
+        merchant: data.merchant ?? '',
+        date: data.date ?? new Date().toLocaleDateString(),
+        items: Array.isArray(data.items)
+          ? data.items.map((it: any) => ({
+              name: it.description ?? it.name ?? 'Item',
+              price: typeof it.amount === 'number' ? it.amount : parseFloat(it.amount) || 0,
+              quantity: it.quantity ?? 1,
+            }))
+          : [],
+      };
+
+      setReceiptData(mapped);
       setShowPanel(true);
     } catch (error) {
       console.error('Error processing image:', error);
