@@ -109,7 +109,7 @@ const BudgetProgress = ({ categories }: { categories: SpendingCategory[] }) => {
             <IconSymbol name="creditcard" size={24} color="#6B4EFF" />
             <View style={styles.totalTextContainer}>
               <ThemedText style={styles.totalLabel}>Tổng ngân sách</ThemedText>
-              <ThemedText style={styles.totalValue}>{formatCurrency(totalBudget)}đ</ThemedText>
+              <ThemedText style={styles.totalValue}>{formatCurrency(totalBudget)}</ThemedText>
             </View>
           </View>
           <View style={styles.totalProgressContainer}>
@@ -120,15 +120,18 @@ const BudgetProgress = ({ categories }: { categories: SpendingCategory[] }) => {
           </View>
           <View style={styles.totalSubItems}>
             <View style={styles.totalSubItem}>
-              <View style={[styles.totalDot, { backgroundColor: '#FF6B6B' }]} />
-              <ThemedText style={styles.totalSubLabel}>Đã chi</ThemedText>
-              <ThemedText style={[styles.totalSubValue, { color: '#FF6B6B' }]}>{formatCurrency(totalSpent)}đ</ThemedText>
+              <View style={styles.totalSubItemRow}>
+                <View style={[styles.totalDot, { backgroundColor: '#FF6B6B' }]} />
+                <ThemedText style={styles.totalSubLabel}>Đã chi</ThemedText>
+              </View>
+              <ThemedText style={[styles.totalSubValue, { color: '#FF6B6B' }]} numberOfLines={1}>{formatCurrency(totalSpent)}</ThemedText>
             </View>
-            <View style={[styles.totalDivider, { width: 1, height: 24 }]} />
             <View style={styles.totalSubItem}>
-              <View style={[styles.totalDot, { backgroundColor: '#4ECDC4' }]} />
-              <ThemedText style={styles.totalSubLabel}>Còn lại</ThemedText>
-              <ThemedText style={[styles.totalSubValue, { color: '#4ECDC4' }]}>{formatCurrency(totalBudget - totalSpent)}đ</ThemedText>
+              <View style={styles.totalSubItemRow}>
+                <View style={[styles.totalDot, { backgroundColor: '#4ECDC4' }]} />
+                <ThemedText style={styles.totalSubLabel}>Còn lại</ThemedText>
+              </View>
+              <ThemedText style={[styles.totalSubValue, { color: '#4ECDC4' }]} numberOfLines={1}>{formatCurrency(totalBudget - totalSpent)}</ThemedText>
             </View>
           </View>
         </View>
@@ -512,10 +515,12 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   totalContainer: {
+    width: '100%',
     backgroundColor: '#fff',
     borderRadius: 16,
     padding: 16,
     marginBottom: 20,
+    marginHorizontal: 0,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -567,12 +572,16 @@ const styles = StyleSheet.create({
     minWidth: 45,
   },
   totalSubItems: {
+    flexDirection: 'column',
+    gap: 12,
+  },
+  totalSubItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 16,
   },
-  totalSubItem: {
-    flex: 1,
+  totalSubItemRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -589,7 +598,6 @@ const styles = StyleSheet.create({
   totalSubValue: {
     fontSize: 14,
     fontWeight: '600',
-    marginLeft: 'auto',
   },
   totalDivider: {
     backgroundColor: '#E5E5E5',
