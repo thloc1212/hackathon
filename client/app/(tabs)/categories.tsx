@@ -1,7 +1,6 @@
 import { Platform, StyleSheet, View, Pressable, ScrollView, TextInput, Modal, TouchableOpacity, Alert } from 'react-native';
 import { useMemo, useState, useCallback, useEffect } from 'react';
 import Svg, { Path, G } from 'react-native-svg';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -9,6 +8,7 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { SpendingCategory, SpendingData } from '@/types';
 import { formatCurrency } from '@/utils/formatters';
 import { useDatabase } from '@/hooks/useDatabase';
+import AuthService from '@/lib/authService';
 
 // Hàm chuyển đổi độ sang radian
 const polarToCartesian = (centerX: number, centerY: number, radius: number, angleInDegrees: number) => {
@@ -52,11 +52,23 @@ const DEFAULT_CATEGORIES = [
   { name: 'Khác', color: '#5F58C2' },
 ];
 
-// Storage key for user budgets
-const BUDGETS_STORAGE_KEY = '@category_budgets';
+// Get server URL from environment variables
+const getServerUrl = () => {
+  const host = process.env.EXPO_PUBLIC_SERVER_HOST || 'localhost';
+  const port = process.env.EXPO_PUBLIC_SERVER_PORT || '3000';
+  
+  if (Platform.OS === 'android') {
+    const androidHost = host === 'localhost' ? '10.0.2.2' : host;
+    return `http://${androidHost}:${port}`;
+  }
+  
+  return `http://${host}:${port}`;
+};
+
+const SERVER_URL = getServerUrl();
 
 // Default budget for categories
-const DEFAULT_BUDGET = 500000; // 500k VND
+const DEFAULT_BUDGET = 500000; // 500k
 
 const BudgetProgress = ({ categories }: { categories: SpendingCategory[] }) => {
   // Tính toán các segment dựa trên tỷ lệ chi tiêu
@@ -327,15 +339,35 @@ export default function CategoriesScreen() {
   const [userBudgets, setUserBudgets] = useState<Record<string, number>>({});
   const [budgetsLoaded, setBudgetsLoaded] = useState(false);
 
-  // Load user budgets from AsyncStorage on mount
+  // Get current user
+  const currentUser = AuthService.getCurrentUser();
+  const session = AuthService.getCurrentSession();
+
+  // Load user budgets from server on mount
   useEffect(() => {
     const loadBudgets = async () => {
       try {
-        const stored = await AsyncStorage.getItem(BUDGETS_STORAGE_KEY);
-        if (stored) {
-          const budgets = JSON.parse(stored);
-          setUserBudgets(budgets);
+        if (!session?.id) {
+          console.warn('No session available for loading budgets');
+          setBudgetsLoaded(true);
+          return;
         }
+        
+        const response = await fetch(`${SERVER_URL}/budgets`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${session.id}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          setUserBudgets(result.data || {});
+        } else {
+          console.error('Failed to load budgets:', await response.text());
+        }
+        
         setBudgetsLoaded(true);
       } catch (error) {
         console.error('Error loading budgets:', error);
@@ -343,15 +375,35 @@ export default function CategoriesScreen() {
       }
     };
     loadBudgets();
-  }, []);
+  }, [session?.id]);
 
-  // Save user budgets to AsyncStorage
+  // Save user budgets to server
   const saveBudgets = async (budgets: Record<string, number>) => {
     try {
-      await AsyncStorage.setItem(BUDGETS_STORAGE_KEY, JSON.stringify(budgets));
-      setUserBudgets(budgets);
+      if (!session?.id) {
+        console.warn('No session available for saving budgets');
+        return;
+      }
+      
+      const response = await fetch(`${SERVER_URL}/budgets`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${session.id}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ budgets }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setUserBudgets(result.data || budgets);
+      } else {
+        console.error('Failed to save budgets:', await response.text());
+        Alert.alert('Lỗi', 'Không thể lưu ngân sách. Vui lòng thử lại.');
+      }
     } catch (error) {
       console.error('Error saving budgets:', error);
+      Alert.alert('Lỗi', 'Không thể lưu ngân sách. Vui lòng thử lại.');
     }
   };
 
@@ -491,7 +543,7 @@ export default function CategoriesScreen() {
   const handleEditSpent = (categoryData: Omit<SpendingCategory, 'id'>) => {
     if (!editingCategory) return;
     
-    // Save the new budget to AsyncStorage
+    // Save the new budget to server database
     const newBudgets = {
       ...userBudgets,
       [editingCategory.name]: categoryData.budget

@@ -12,7 +12,6 @@ import {
   ScrollView,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
 import AuthService from '@/lib/authService';
@@ -26,8 +25,23 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme'; 
 
-const STORAGE_KEY = '@app_profile_v1';
 const PRIMARY_COLOR = '#5F58C2';
+
+// Get server URL from environment variables
+const getServerUrl = () => {
+  const host = process.env.EXPO_PUBLIC_SERVER_HOST || 'localhost';
+  const port = process.env.EXPO_PUBLIC_SERVER_PORT || '3000';
+  
+  if (Platform.OS === 'android') {
+    const androidHost = host === 'localhost' ? '10.0.2.2' : host;
+    return `http://${androidHost}:${port}`;
+  }
+  
+  return `http://${host}:${port}`;
+};
+
+const SERVER_URL = getServerUrl();
+
 // --- MÀN HÌNH CHÍNH ---
 
 export default function ProfileScreen() {
@@ -61,14 +75,32 @@ export default function ProfileScreen() {
   const loadProfile = async () => {
     try {
       setLoading(true);
-      const raw = await AsyncStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      setName(parsed.name || '');
-      setEmail(parsed.email || '');
-      setBio(parsed.bio || '');
-      setDateOfBirth(parsed.dateOfBirth || '');
-      setAvatarUri(parsed.avatarUri || null);
+      
+      const session = AuthService.getCurrentSession();
+      if (!session?.id) {
+        console.warn('No session available');
+        return;
+      }
+
+      const response = await fetch(`${SERVER_URL}/auth/profile`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${session.id}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        const user = result.user;
+        setName(user.name || '');
+        setEmail(user.email || '');
+        setBio(user.bio || '');
+        setDateOfBirth(user.dateOfBirth || '');
+        setAvatarUri(user.avatarUri || null);
+      } else {
+        console.error('Failed to load profile:', await response.text());
+      }
     } catch (err) {
       console.warn('Failed to load profile', err);
     } finally {
@@ -78,9 +110,29 @@ export default function ProfileScreen() {
 
   const saveProfile = async () => {
     try {
-      const payload = { name, email, bio, dateOfBirth, avatarUri };
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-      Alert.alert('Thành công', 'Thông tin đã được lưu.');
+      const session = AuthService.getCurrentSession();
+      if (!session?.id) {
+        Alert.alert('Lỗi', 'Phiên đăng nhập không hợp lệ.');
+        return;
+      }
+
+      const payload = { name, bio, dateOfBirth, avatarUri };
+      
+      const response = await fetch(`${SERVER_URL}/auth/profile`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${session.id}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (response.ok) {
+        Alert.alert('Thành công', 'Thông tin đã được lưu.');
+      } else {
+        console.error('Failed to save profile:', await response.text());
+        Alert.alert('Lỗi', 'Không thể lưu thông tin.');
+      }
     } catch (err) {
       console.warn('Failed to save profile', err);
       Alert.alert('Lỗi', 'Không thể lưu thông tin.');
@@ -88,9 +140,7 @@ export default function ProfileScreen() {
   };
 
   useEffect(() => {
-    // load auth user if present
-    const u = AuthService.getCurrentUser();
-    if (u && u.email) setEmail(u.email);
+    // Email is already loaded from profile API
   }, []);
 
   const pickImage = async () => {
@@ -180,7 +230,7 @@ export default function ProfileScreen() {
           </View>
 
           {/* Action Buttons */}
-          <View style={styles.actionsRow}>
+          <View style={styles.actionsColumn}>
             <Pressable style={[styles.button, styles.reloadButton]} onPress={() => router.push('./profile-edit')}>
               <ThemedText style={styles.reloadButtonText}>Chỉnh sửa</ThemedText>
             </Pressable>
@@ -330,17 +380,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#F4F3FF',
   },
 
-  // --- Actions Row ---
-  actionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: '30%',
+  // --- Actions Column (Full Width Buttons) ---
+  actionsColumn: {
+    flexDirection: 'column',
+    gap: 15,
     marginTop: 70,
-    width: '70%',
-    alignSelf: 'center',
   },
   button: {
-    flex: 1,
+    width: '100%',
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',

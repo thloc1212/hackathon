@@ -24,9 +24,9 @@ const fetchInsightFromGemini = async (topCategory: SpendingSummary): Promise<str
   // Logic Gemini:
   const spentIncrease = 570000;
   
-  const insight = `Chi tiêu **${topCategory.category}** tháng này tăng 12% (**${formatCurrency(spentIncrease)} VND**) so với tháng trước. 
+  const insight = `Chi tiêu **${topCategory.category}** tháng này tăng 12% (**${formatCurrency(spentIncrease)}**) so với tháng trước. 
 
-**Insight**: Với chi tiêu ${topCategory.category} là Top 1 (${formatCurrency(topCategory.spent)} VND), bạn nên thử lên kế hoạch nấu ăn tại nhà 3 bữa/tuần để tiết kiệm ít nhất **${formatCurrency(500000)} VND** trong tháng tới.`;
+**Insight**: Với chi tiêu ${topCategory.category} là Top 1 (${formatCurrency(topCategory.spent)}), bạn nên thử lên kế hoạch nấu ăn tại nhà 3 bữa/tuần để tiết kiệm ít nhất **${formatCurrency(500000)}** trong tháng tới.`;
 
   return insight;
 };
@@ -46,7 +46,7 @@ const SpendingItem = ({ transaction }: { transaction: Transaction }) => {
         <View>
           {/* Số tiền luôn hiển thị là số âm (chi tiêu) */}
           <ThemedText style={styles.spendingAmount}>
-            {formatCurrency(displayAmount)} VND 
+            {formatCurrency(displayAmount)} 
           </ThemedText>
           <ThemedText style={styles.spendingDescription}>
             Nội Dung: {transaction.description}
@@ -218,7 +218,7 @@ export default function StatisticScreen() {
           <View style={[styles.totalSpentBox, { padding: Math.round(20 * scale), borderRadius: Math.round(16 * scale) }]}>
             <ThemedText style={[styles.totalSpentLabel, { fontSize: Math.round(20 * scale) }]}>Tổng Chi Tiêu</ThemedText>
             <ThemedText style={[styles.totalSpentValue, { fontSize: Math.round(35 * scale) }]}>
-              {totalSpentFormatted} VND
+              {totalSpentFormatted}
             </ThemedText>
           </View>
 
@@ -290,7 +290,7 @@ export default function StatisticScreen() {
                           <View style={{ flex: 1, marginLeft: Math.round(10 * scale) }}>
                             <ThemedText style={[styles.topSpendingCategory, { fontSize: Math.round(15 * scale) }]}>{item.category || 'Unknown'} {item.percentage || 0}%</ThemedText>
                           </View>
-                          <ThemedText style={[styles.topSpendingAmount, { fontSize: Math.round(15 * scale) }]}>-{formatCurrency(typeof item.spent === 'number' ? item.spent : 0)} VND</ThemedText>
+                          <ThemedText style={[styles.topSpendingAmount, { fontSize: Math.round(15 * scale) }]}>-{formatCurrency(typeof item.spent === 'number' ? item.spent : 0)}</ThemedText>
                         </View>
                       </ExpoLinearGradient>
                     ))}

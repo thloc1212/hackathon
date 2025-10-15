@@ -294,6 +294,56 @@ app.get('/auth/profile', async (req, res) => {
   }
 });
 
+// Update user profile (protected route)
+app.put('/auth/profile', async (req, res) => {
+  try {
+    const sessionId = req.headers.authorization?.replace('Bearer ', '');
+
+    if (!sessionId) {
+      return res.status(401).json({ 
+        error: 'Authorization header required' 
+      });
+    }
+
+    // Verify session
+    const session = await database.findSessionById(sessionId);
+    if (!session || new Date(session.expiresAt) < new Date()) {
+      return res.status(401).json({ 
+        error: 'Invalid or expired session' 
+      });
+    }
+
+    // Extract profile fields from request
+    const { name, bio, avatarUri, dateOfBirth } = req.body;
+
+    // Build update object with only provided fields
+    const updateData = {};
+    if (name !== undefined) updateData.name = name;
+    if (bio !== undefined) updateData.bio = bio;
+    if (avatarUri !== undefined) updateData.avatarUri = avatarUri;
+    if (dateOfBirth !== undefined) updateData.dateOfBirth = dateOfBirth;
+
+    // Update user
+    const updatedUser = await database.updateUser(session.userId, updateData);
+
+    // Remove password from response
+    const { password: _, ...userResponse } = updatedUser;
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      user: userResponse
+    });
+
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      detail: error.message 
+    });
+  }
+});
+
 // Transaction Routes
 
 // Middleware to verify session for protected routes
@@ -532,6 +582,62 @@ app.delete('/transactions/:id', verifySession, async (req, res) => {
 
   } catch (error) {
     console.error('Delete transaction error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      detail: error.message 
+    });
+  }
+});
+
+// Get user budgets
+app.get('/budgets', verifySession, async (req, res) => {
+  try {
+    const budgets = await database.getUserBudgets(req.user.id);
+
+    res.json({
+      success: true,
+      data: budgets
+    });
+
+  } catch (error) {
+    console.error('Get budgets error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      detail: error.message 
+    });
+  }
+});
+
+// Update user budgets
+app.put('/budgets', verifySession, async (req, res) => {
+  try {
+    const { budgets } = req.body;
+
+    if (!budgets || typeof budgets !== 'object') {
+      return res.status(400).json({ 
+        error: 'Budgets must be an object with category names as keys and numbers as values' 
+      });
+    }
+
+    // Validate all values are numbers
+    for (const [category, budget] of Object.entries(budgets)) {
+      if (typeof budget !== 'number' || budget < 0) {
+        return res.status(400).json({ 
+          error: `Budget for ${category} must be a positive number` 
+        });
+      }
+    }
+
+    const updatedBudgets = await database.updateUserBudgets(req.user.id, budgets);
+
+    res.json({
+      success: true,
+      message: 'Budgets updated successfully',
+      data: updatedBudgets
+    });
+
+  } catch (error) {
+    console.error('Update budgets error:', error);
     res.status(500).json({ 
       error: 'Internal server error',
       detail: error.message 
