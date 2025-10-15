@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -11,7 +11,8 @@ import {
   SafeAreaView,
   TextInput,
   ActivityIndicator,
-  Modal
+  Modal,
+  RefreshControl
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
@@ -31,6 +32,7 @@ export default function HomeScreen() {
   const colorScheme = 'light'; // Force light mode
   const colors = Colors[colorScheme];
   const [userName, setUserName] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
   
   // Dashboard state
   const [ocrText, setOcrText] = useState('');
@@ -50,6 +52,18 @@ export default function HomeScreen() {
     refreshData,
     addTransaction: addTransactionToDb
   } = useDatabase();
+
+  // Pull to refresh handler
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refreshData();
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshData]);
   
   // API hook for parsing receipts
   const { 
@@ -247,7 +261,18 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={[dashboardStyles.container, { backgroundColor: '#F0F3F8' }]}>
       <StatusBar style="dark" backgroundColor="#F0F3F8" />
-      <ScrollView style={dashboardStyles.scrollView} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={dashboardStyles.scrollView} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#5F58C2']}
+            tintColor="#5F58C2"
+          />
+        }
+      >
         {/* Welcome Section */}
         <View style={dashboardStyles.welcomeSection}>
           <Text style={[dashboardStyles.welcomeText, { color: colors.text }]}>

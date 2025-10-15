@@ -1,6 +1,6 @@
 // statistic.tsx
 
-import { Platform, StyleSheet, View, Pressable, ScrollView, TouchableOpacity, useWindowDimensions, SafeAreaView } from 'react-native';
+import { Platform, StyleSheet, View, Pressable, ScrollView, TouchableOpacity, useWindowDimensions, SafeAreaView, RefreshControl } from 'react-native';
 import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
 import { useMemo, useState, useCallback, useEffect } from 'react';
 import { formatCurrency } from '@/utils/formatters';
@@ -114,9 +114,22 @@ const SpendingInsight = ({ topSpending, totalSpent }: { topSpending: SpendingSum
 export default function StatisticScreen() {
   const [selectedCategory, setSelectedCategory] = useState<string>('Tất Cả');
   const [showAllTransactions, setShowAllTransactions] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   
   // Use centralized database context
-  const { transactions: apiTransactions, stats, loading } = useDatabase();
+  const { transactions: apiTransactions, stats, loading, refreshData } = useDatabase();
+
+  // Pull to refresh handler
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refreshData();
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshData]);
   
   // Convert API transactions to UI format and calculate statistics
   const data = useMemo(() => {
@@ -197,12 +210,28 @@ export default function StatisticScreen() {
     <ThemedView style={styles.container}>
       <StatusBar style="dark" backgroundColor="#F0F3F8" />
       <SafeAreaView style={{ flex: 1 }}>
-        <ScrollView style={styles.content} contentContainerStyle={{ paddingHorizontal: paddingH }}>
+        <ScrollView 
+          style={styles.content} 
+          contentContainerStyle={{ paddingHorizontal: paddingH }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#5F58C2']}
+              tintColor="#5F58C2"
+            />
+          }
+        >
 
           {/* Tổng Chi Tiêu */}
           <View style={[styles.totalSpentBox, { padding: Math.round(20 * scale), borderRadius: Math.round(16 * scale) }]}>
-            <ThemedText style={[styles.totalSpentLabel, { fontSize: Math.round(20 * scale) }]}>Tổng Chi Tiêu</ThemedText>
-            <ThemedText style={[styles.totalSpentValue, { fontSize: Math.round(35 * scale) }]}>
+            <ThemedText style={[styles.totalSpentLabel, { fontSize: Math.round(18 * scale) }]}>Tổng Chi Tiêu</ThemedText>
+            <ThemedText 
+              style={[styles.totalSpentValue, { fontSize: Math.round(32 * scale) }]}
+              numberOfLines={2}
+              adjustsFontSizeToFit={true}
+              minimumFontScale={0.8}
+            >
               {totalSpentFormatted}
             </ThemedText>
           </View>
@@ -339,15 +368,19 @@ const styles = StyleSheet.create({
     marginTop: 30,
   },
   totalSpentLabel: {
-    fontSize: 20,
+    fontSize: 18,
     color: '#5F58C2',
     fontWeight: '500',
-    marginBottom: 20,
+    marginBottom: 8,
+    textAlign: 'center',
   },
   totalSpentValue: {
-    fontSize: 35,
+    fontSize: 32,
     fontWeight: 'bold',
     color: '#5F58C2',
+    textAlign: 'center',
+    flexWrap: 'wrap',
+    lineHeight: 38,
   },
   tabsContainer: {
     flexDirection: 'row',

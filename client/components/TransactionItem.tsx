@@ -67,7 +67,7 @@ export default function TransactionItem({ transaction, colorScheme = 'light', on
     try {
       const updateData = {
         description: editDescription.trim(),
-        amount: transaction.type === 'expense' ? -Math.abs(amount) : Math.abs(amount),
+        amount: Math.abs(amount),
         category: editCategory.trim(),
       };
 

@@ -1,4 +1,4 @@
-import { Platform, StyleSheet, View, Pressable, ScrollView, TextInput, Modal, TouchableOpacity, Alert, SafeAreaView } from 'react-native';
+import { Platform, StyleSheet, View, Pressable, ScrollView, TextInput, Modal, TouchableOpacity, Alert, SafeAreaView, RefreshControl } from 'react-native';
 import { useMemo, useState, useCallback, useEffect } from 'react';
 import Svg, { Path, G } from 'react-native-svg';
 import { StatusBar } from 'expo-status-bar';
@@ -338,11 +338,24 @@ const SpendingCard = ({
 
 export default function CategoriesScreen() {
   // Get real data from database context
-  const { transactions, stats, loading } = useDatabase();
+  const { transactions, stats, loading, refreshData } = useDatabase();
 
   // State for user-defined budgets
   const [userBudgets, setUserBudgets] = useState<Record<string, number>>({});
   const [budgetsLoaded, setBudgetsLoaded] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Pull to refresh handler
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refreshData();
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshData]);
 
   // Get current user
   const currentUser = AuthService.getCurrentUser();
@@ -573,7 +586,18 @@ export default function CategoriesScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: '#F0F3F8' }]}>
       <StatusBar style="dark" backgroundColor="#F0F3F8" />
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.scrollView} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#5F58C2']}
+            tintColor="#5F58C2"
+          />
+        }
+      >
         {/* Header Section */}
         <View style={styles.welcomeSection}>
           <ThemedText style={styles.title}>Danh Mục</ThemedText>
@@ -635,10 +659,12 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
   title: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#5F58C2',
     marginTop: 4,
+    textAlign: 'left',
+    flexShrink: 1,
   },
 
   // Progress container styles
