@@ -16,6 +16,7 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ReceiptInfo } from '@/types';
 import { formatCurrency } from '@/utils/formatters';
+import { useApi } from '@/hooks/useApi';
 
 const { width, height } = Dimensions.get('window');
 
@@ -28,6 +29,7 @@ export default function CameraScreen() {
   const [isProcessing, setIsProcessing] = useState(false);
   const cameraRef = useRef<CameraView>(null);
   const colorScheme = useColorScheme();
+  const { parseReceipt, addTransaction } = useApi();
 
   useEffect(() => {
     (async () => {

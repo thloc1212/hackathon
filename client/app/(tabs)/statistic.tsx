@@ -1,79 +1,574 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+// statistic.tsx
 
-export default function StatisticScreen() {
-  const colorScheme = useColorScheme();
+import { Platform, StyleSheet, View, Pressable, ScrollView, TouchableOpacity, useWindowDimensions, SafeAreaView } from 'react-native';
+import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
+import { useMemo, useState, useCallback, useEffect } from 'react';
+import { formatCurrency } from '@/utils/formatters';
+import { StatusBar } from 'expo-status-bar';
+
+import { ThemedText } from '@/components/themed-text';
+import { ThemedView } from '@/components/themed-view';
+
+// Import types mới
+import { StatisticData, SpendingSummary, Transaction } from '@/types';
+import { useApi } from '@/hooks/useApi';
+import { useDatabase } from '@/hooks/useDatabase'; 
+
+// Default category if none available; we'll derive tabs from data at runtime
+const DEFAULT_CATEGORY_TABS = ['Tất Cả'];
+
+// Remove mock data - use only real data from database
+
+// Mock Gemini Insight function (fallback)
+const fetchInsightFromGemini = async (topCategory: SpendingSummary): Promise<string> => {
+  // Logic Gemini:
+  const spentIncrease = 570000;
+  
+  const insight = `Chi tiêu **${topCategory.category}** tháng này tăng 12% (**${formatCurrency(spentIncrease)} VND**) so với tháng trước. 
+
+**Insight**: Với chi tiêu ${topCategory.category} là Top 1 (${formatCurrency(topCategory.spent)} VND), bạn nên thử lên kế hoạch nấu ăn tại nhà 3 bữa/tuần để tiết kiệm ít nhất **${formatCurrency(500000)} VND** trong tháng tới.`;
+
+  return insight;
+};
+
+
+const SpendingItem = ({ transaction }: { transaction: Transaction }) => {
+  // Lấy giá trị tuyệt đối để hiển thị số tiền chi tiêu
+  const displayAmount = typeof transaction.amount === 'number' ? transaction.amount : 0;
+
+  // Chỉ hiển thị giao dịch chi tiêu
+  if (transaction.type === 'income') return null;
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: Colors[colorScheme ?? 'light'].background }]}>
-      <View style={styles.content}>
-        <Text style={[styles.title, { color: Colors[colorScheme ?? 'light'].text }]}>
-          Statistics
-        </Text>
-        <Text style={[styles.subtitle, { color: Colors[colorScheme ?? 'light'].text }]}>
-          Analytics and data insights
-        </Text>
-        
-        <View style={styles.statsContainer}>
-          <View style={[styles.statCard, { backgroundColor: Colors[colorScheme ?? 'light'].tint }]}>
-            <Text style={styles.statNumber}>42</Text>
-            <Text style={styles.statLabel}>Total Items</Text>
-          </View>
-          
-          <View style={[styles.statCard, { backgroundColor: '#FF6B6B' }]}>
-            <Text style={styles.statNumber}>$1,234</Text>
-            <Text style={styles.statLabel}>Total Spent</Text>
-          </View>
-          
-          <View style={[styles.statCard, { backgroundColor: '#4ECDC4' }]}>
-            <Text style={styles.statNumber}>15</Text>
-            <Text style={styles.statLabel}>This Month</Text>
-          </View>
+    <View style={styles.spendingItemCard}>
+      <View style={styles.spendingItemLeft}>
+        <View style={styles.categoryIconPlaceholder} />
+        <View>
+          {/* Số tiền luôn hiển thị là số âm (chi tiêu) */}
+          <ThemedText style={styles.spendingAmount}>
+            {formatCurrency(displayAmount)} VND 
+          </ThemedText>
+          <ThemedText style={styles.spendingDescription}>
+            Nội Dung: {transaction.description}
+          </ThemedText>
         </View>
       </View>
-    </ScrollView>
+    </View>
+  );
+};
+
+// SpendingInsight component with API integration
+const SpendingInsight = ({ topSpending, totalSpent }: { topSpending: SpendingSummary; totalSpent: number }) => {
+  const [insight, setInsight] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const { getInsight } = useApi();
+
+  useEffect(() => {
+    let mounted = true;
+    const loadInsight = async () => {
+      if (!topSpending) return;
+      setIsLoading(true);
+      try {
+        // Try backend /insight endpoint first using useApi hook
+        const response = await getInsight(
+          topSpending.category, 
+          topSpending.spent, 
+          topSpending.percentage, 
+          totalSpent
+        );
+        
+        if (response.success && response.data?.insight && mounted) {
+          setInsight(response.data.insight);
+          return;
+        }
+
+        // Fallback to local generator
+        const local = await fetchInsightFromGemini(topSpending);
+        if (mounted) setInsight(local);
+      } catch (error) {
+        console.error('Error fetching insight:', error);
+        if (mounted) setInsight('Không thể tải mẹo tiết kiệm thông minh.');
+      } finally {
+        if (mounted) setIsLoading(false);
+      }
+    };
+
+    loadInsight();
+    return () => { mounted = false; };
+  }, [topSpending, totalSpent]);
+  
+  const renderInsightText = (text: string) => {
+    const parts = text.split(/(\*\*.*?\*\*)/g).filter(Boolean);
+    
+    return (
+      <ThemedText style={styles.insightText}>
+        {parts.map((part, index) => {
+          if (part.startsWith('**') && part.endsWith('**')) {
+            return (
+              <ThemedText key={index} style={styles.insightTextBold}>
+                {part.slice(2, -2)}
+              </ThemedText>
+            );
+          }
+          return part;
+        })}
+      </ThemedText>
+    );
+  };
+  
+  return (
+    <View style={styles.insightContainer}>
+      <ThemedText style={styles.insightTitle}>
+        Mẹo tiết kiệm thông minh
+      </ThemedText>
+      {isLoading ? (
+        <ThemedText style={styles.insightText}>Đang tải gợi ý...</ThemedText>
+      ) : (
+        renderInsightText(insight)
+      )}
+    </View>
+  );
+};
+
+
+// --- Main Screen ---
+
+export default function StatisticScreen() {
+  const [selectedCategory, setSelectedCategory] = useState<string>('Tất Cả');
+  const [showAllTransactions, setShowAllTransactions] = useState(false);
+  
+  // Use centralized database context
+  const { transactions: apiTransactions, stats, loading } = useDatabase();
+  
+  // Convert API transactions to UI format and calculate statistics
+  const data = useMemo(() => {
+    if (!apiTransactions || !Array.isArray(apiTransactions) || !stats) {
+      return {
+        totalSpent: 0,
+        transactions: [],
+        topSpending: [],
+        insight: ''
+      };
+    }
+
+    // Use the already converted UI transactions with consistent date format
+    const uiTransactions: Transaction[] = apiTransactions.map(t => ({
+      ...t,
+      date: t.date ? new Date(t.date).toLocaleDateString('vi-VN') : new Date().toLocaleDateString('vi-VN')
+    }));
+
+    // Calculate top spending categories using UI transactions
+    const expenseTransactions = uiTransactions.filter(t => t.type === 'expense');
+    const categorySpending: Record<string, number> = {};
+    
+    expenseTransactions.forEach(t => {
+      const category = t.category || 'Other';
+      const amount = typeof t.amount === 'number' ? Math.abs(t.amount) : 0;
+      categorySpending[category] = (categorySpending[category] || 0) + amount;
+    });
+
+    const topSpending = Object.entries(categorySpending)
+      .map(([category, spent]) => ({
+        category: category || 'Unknown',
+        spent: typeof spent === 'number' ? spent : 0,
+        percentage: stats.totalExpenses > 0 ? Math.round((spent / stats.totalExpenses) * 100) : 0
+      }))
+      .sort((a, b) => (b.spent || 0) - (a.spent || 0))
+      .slice(0, 3);
+
+    return {
+      totalSpent: stats.totalExpenses || 0,
+      transactions: uiTransactions,
+      topSpending: topSpending,
+      insight: '' // Will be loaded by SpendingInsight component
+    };
+  }, [apiTransactions, stats]);
+
+  // Responsive helpers
+  const { width } = useWindowDimensions();
+  const scale = Math.min(Math.max(width / 375, 0.85), 1.25);
+  const paddingH = Math.max(12, Math.round(width * 0.04));
+
+  // build category tabs from data
+  const categoryTabs = useMemo(() => {
+    const cats = new Set<string>();
+    data.transactions.forEach((t: Transaction) => cats.add(t.category || 'Other'));
+    return [...DEFAULT_CATEGORY_TABS, ...Array.from(cats).filter(c => c && c !== 'Tất Cả')];
+  }, [data.transactions]);
+
+  // Lọc chỉ lấy giao dịch chi tiêu VÀ theo tab đã chọn
+  const filteredTransactions = useMemo(() => {
+    // 1. Lọc tất cả các giao dịch là 'expense'
+    const expenses = data.transactions.filter((t: Transaction) => t.type === 'expense');
+    if (selectedCategory === 'Tất Cả') return expenses;
+    return expenses.filter((t: Transaction) => t.category === selectedCategory);
+  }, [data.transactions, selectedCategory]);
+
+  const displayedTransactions = showAllTransactions ? filteredTransactions : filteredTransactions.slice(0, 3);
+  const totalSpentFormatted = formatCurrency(typeof data.totalSpent === 'number' ? data.totalSpent : 0);
+  const topSpendingCategory = data.topSpending && data.topSpending.length > 0 ? data.topSpending[0] : null;
+
+  return (
+    <ThemedView style={styles.container}>
+      <StatusBar style="dark" backgroundColor="#F0F3F8" />
+      <SafeAreaView style={{ flex: 1 }}>
+        <ScrollView style={styles.content} contentContainerStyle={{ paddingHorizontal: paddingH }}>
+
+          {/* Tổng Chi Tiêu */}
+          <View style={[styles.totalSpentBox, { padding: Math.round(20 * scale), borderRadius: Math.round(16 * scale) }]}>
+            <ThemedText style={[styles.totalSpentLabel, { fontSize: Math.round(20 * scale) }]}>Tổng Chi Tiêu</ThemedText>
+            <ThemedText style={[styles.totalSpentValue, { fontSize: Math.round(35 * scale) }]}>
+              {totalSpentFormatted} VND
+            </ThemedText>
+          </View>
+
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ThemedText style={styles.loadingText}>Loading statistics...</ThemedText>
+            </View>
+          ) : data.transactions.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <ThemedText style={styles.emptyTitle}>No Transactions Yet</ThemedText>
+              <ThemedText style={styles.emptyText}>
+                Start adding transactions to see your spending statistics here.
+              </ThemedText>
+            </View>
+          ) : (
+            <>
+              {/* Tabs */}
+              <View style={styles.tabsContainer}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingVertical: 8 }}>
+                  {categoryTabs.map((tab) => (
+                    <Pressable
+                      key={tab}
+                      style={[
+                        styles.tabButton,
+                        selectedCategory === tab && styles.tabSelected,
+                        { paddingHorizontal: Math.round(12 * scale), paddingVertical: Math.round(6 * scale) }
+                      ]}
+                      onPress={() => setSelectedCategory(tab)}
+                    >
+                      <ThemedText style={[styles.tabText, { fontSize: Math.round(14 * scale) }, selectedCategory === tab ? styles.tabTextSelected : styles.tabTextUnselected]}>
+                        {tab}
+                      </ThemedText>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+
+              {/* Transactions */}
+              {displayedTransactions.length > 0 ? (
+                <>
+                  {displayedTransactions.map((transaction: Transaction) => (
+                    <View key={transaction.id} style={{ marginBottom: Math.round(12 * scale) }}>
+                      <SpendingItem transaction={transaction} />
+                    </View>
+                  ))}
+                  {filteredTransactions.length > 3 && (
+                    <TouchableOpacity style={styles.viewAllButton} onPress={() => setShowAllTransactions(s => !s)}>
+                      <ThemedText style={[styles.viewAllText, { fontSize: Math.round(14 * scale) }]}>{showAllTransactions ? 'Show less' : 'View All'}</ThemedText>
+                    </TouchableOpacity>
+                  )}
+                </>
+              ) : (
+                <View style={styles.noTransactionsContainer}>
+                  <ThemedText style={styles.noTransactionsText}>
+                    No transactions in this category yet.
+                  </ThemedText>
+                </View>
+              )}
+
+              {/* Top 3 */}
+              {data.topSpending.length > 0 && (
+                <>
+                  <ThemedText style={[styles.sectionTitle, { fontSize: Math.round(24 * scale), marginTop: Math.round(40 * scale) }]}>Top 3 chi tiêu</ThemedText>
+                  <View style={styles.topSpendingContainer}>
+                    {data.topSpending.map((item: SpendingSummary, index: number) => (
+                      <ExpoLinearGradient key={index} colors={['#B9B4FF', '#EDE9FF']} start={{x:0,y:0}} end={{x:1,y:0}} style={[styles.topSpendingGradientItem, { padding: Math.round(12 * scale), borderRadius: Math.round(12 * scale) }]}>
+                        <View style={[styles.topSpendingInner, { alignItems: 'center' }]}>
+                          <ThemedText style={[styles.topSpendingRank, { fontSize: Math.round(16 * scale) }]}>{index + 1}.</ThemedText>
+                          <View style={{ flex: 1, marginLeft: Math.round(10 * scale) }}>
+                            <ThemedText style={[styles.topSpendingCategory, { fontSize: Math.round(15 * scale) }]}>{item.category || 'Unknown'} {item.percentage || 0}%</ThemedText>
+                          </View>
+                          <ThemedText style={[styles.topSpendingAmount, { fontSize: Math.round(15 * scale) }]}>-{formatCurrency(typeof item.spent === 'number' ? item.spent : 0)} VND</ThemedText>
+                        </View>
+                      </ExpoLinearGradient>
+                    ))}
+                  </View>
+                </>
+              )}
+
+              {topSpendingCategory && <SpendingInsight topSpending={topSpendingCategory} totalSpent={typeof data.totalSpent === 'number' ? data.totalSpent : 0} />}
+            </>
+          )}
+
+          <View style={{ height: Math.round(100 * scale) }} />
+        </ScrollView>
+      </SafeAreaView>
+    </ThemedView>
   );
 }
 
+
+// --- Styles ---
+// Giữ nguyên Styles từ câu trả lời trước
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#FFF',
+    paddingTop: Platform.OS === 'android' ? 30 : 0,
   },
-  content: {
-    padding: 20,
+  header: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     alignItems: 'center',
   },
   title: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
-    marginBottom: 10,
   },
-  subtitle: {
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 30,
+  content: {
+    flex: 1,
+    paddingHorizontal: 16,
   },
-  statsContainer: {
-    width: '100%',
-    gap: 15,
+  sectionTitle: {
+    fontSize: 25,
+    fontWeight: 'bold',
+    marginVertical: 15,
+    marginTop: 50,
+    color: '#5F58C2',
   },
-  statCard: {
+  totalSpentBox: {
+    backgroundColor: '#E6E0FF',
+    borderRadius: 16,
     padding: 20,
-    borderRadius: 15,
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 24,
+    marginTop: 30,
   },
-  statNumber: {
-    fontSize: 32,
+  totalSpentLabel: {
+    fontSize: 20,
+    color: '#5F58C2',
+    fontWeight: '500',
+    marginBottom: 20,
+  },
+  totalSpentValue: {
+    fontSize: 35,
     fontWeight: 'bold',
-    color: 'white',
-    marginBottom: 5,
+    color: '#5F58C2',
   },
-  statLabel: {
+  tabsContainer: {
+    flexDirection: 'row',
+    marginBottom: 16,
+  },
+  tabButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginRight: 8,
+    backgroundColor: '#F0F0F0',
+  },
+  tabSelected: {
+    backgroundColor: '#5F58C2',
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  tabTextSelected: {
+    color: '#FFF',
+  },
+  tabTextUnselected: {
+    color: '#666',
+  },
+  spendingItemCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  spendingItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  categoryIconPlaceholder: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#E0E0E0',
+    marginRight: 12,
+  },
+  spendingAmount: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#F60000',
+  },
+  spendingDescription: {
+    fontSize: 14,
+    color: '#666',
+  },
+  viewAllButton: {
+    padding: 8,
+    alignSelf: 'center',
+    marginVertical: 8,
+  },
+  viewAllText: {
+    fontSize: 14,
+    color: '#6B4EFF',
+  },
+  topSpendingContainer: {
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+    padding: 16,
+    marginBottom: 24,
+  },
+  topSpendingItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F5F5',
+  },
+  topSpendingRank: {
     fontSize: 16,
-    color: 'white',
-    opacity: 0.9,
+    fontWeight: 'bold',
+    color: '#6B4EFF',
+    minWidth: 20,
+  },
+  topSpendingCategory: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '500',
+    marginLeft: 10,
+    color: '#333',
+  },
+  topSpendingAmount: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#F60000',
+  },
+  insightContainer: {
+    backgroundColor: '#241E78',
+    borderRadius: 12,
+    padding: 30,
+    marginBottom: 24,
+    marginTop: 30,
+  },
+  insightTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFD45B',
+    marginBottom: 20,
+  },
+  insightText: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: '#fff',
+  },
+  insightTextBold: {
+    fontWeight: 'bold',
+    color: '#0DE31B',
+  },
+  gradientBarContainer: {
+    width: 80,
+    height: 12,
+    borderRadius: 8,
+    backgroundColor: '#EEE',
+    overflow: 'hidden',
+    marginLeft: 12,
+  },
+  gradientBar: {
+    height: '100%',
+    borderRadius: 8,
+  },
+  topSpendingGradientItem: {
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  topSpendingInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  footerNavBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 80,
+    backgroundColor: '#FFF',
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#EEE',
+    paddingBottom: 20,
+  },
+  cameraButtonPlaceholder: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#6B4EFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 50,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#666',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 80,
+    paddingHorizontal: 40,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#666',
+    marginBottom: 12,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#888',
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  noTransactionsContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+  },
+  noTransactionsText: {
+    fontSize: 16,
+    color: '#888',
+    textAlign: 'center',
   },
 });

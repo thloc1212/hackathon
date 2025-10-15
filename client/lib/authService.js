@@ -1,9 +1,21 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
-const SERVER_URL = Platform.OS === 'android' 
-  ? 'http://10.0.2.2:3000' 
-  : 'http://localhost:3000';
+// Get server URL from environment variables
+const getServerUrl = () => {
+  const host = process.env.EXPO_PUBLIC_SERVER_HOST || 'localhost';
+  const port = process.env.EXPO_PUBLIC_SERVER_PORT || '3000';
+  
+  if (Platform.OS === 'android') {
+    // For Android emulator, localhost needs to be mapped to 10.0.2.2
+    const androidHost = host === 'localhost' ? '10.0.2.2' : host;
+    return `http://${androidHost}:${port}`;
+  }
+  
+  return `http://${host}:${port}`;
+};
+
+const SERVER_URL = getServerUrl();
 
 const SESSION_KEY = 'user_session';
 
@@ -11,6 +23,8 @@ class AuthService {
   constructor() {
     this.user = null;
     this.session = null;
+    // simple subscription for auth changes
+    this._listeners = [];
   }
 
   async signup(email, password, dateOfBirth) {
@@ -72,6 +86,11 @@ class AuthService {
         session: data.session,
       }));
 
+      // notify listeners
+      this.user = data.user;
+      this.session = data.session;
+      this._emitAuthChange();
+
       return {
         success: true,
         user: data.user,
@@ -103,6 +122,9 @@ class AuthService {
       this.session = null;
       await AsyncStorage.removeItem(SESSION_KEY);
 
+  // notify listeners
+  this._emitAuthChange();
+
       return { success: true };
     } catch (error) {
       console.error('Signout error:', error);
@@ -128,6 +150,7 @@ class AuthService {
       if (isValid) {
         this.user = user;
         this.session = session;
+        this._emitAuthChange();
         return { user, session };
       } else {
         // Invalid session, clear storage
@@ -138,6 +161,30 @@ class AuthService {
       console.error('Load session error:', error);
       await AsyncStorage.removeItem(SESSION_KEY);
       return null;
+    }
+  }
+
+  // subscription API
+  onAuthChange(cb) {
+    if (typeof cb === 'function') {
+      this._listeners.push(cb);
+      // return unsubscribe
+      return () => this.offAuthChange(cb);
+    }
+    return () => {};
+  }
+
+  offAuthChange(cb) {
+    this._listeners = this._listeners.filter((fn) => fn !== cb);
+  }
+
+  _emitAuthChange() {
+    try {
+      this._listeners.forEach((fn) => {
+        try { fn(this.user, this.session); } catch (e) { /* noop */ }
+      });
+    } catch (e) {
+      // noop
     }
   }
 
