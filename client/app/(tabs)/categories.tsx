@@ -269,6 +269,7 @@ const CategoryModal = ({
               onChangeText={setSpent}
               keyboardType="numeric"
               placeholder="Nhập số tiền đã chi"
+              editable={false}
             />
           </View>
 
@@ -311,6 +312,7 @@ const SpendingCard = ({
   onEdit: (category: SpendingCategory) => void;
 }) => {
   const percentage = Math.min((category.spent / category.budget) * 100, 100);
+  if (category.name === 'Thu nhập') { return null; }
   
   return (
     <Pressable 

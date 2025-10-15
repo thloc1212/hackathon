@@ -10,6 +10,7 @@ import {
   ScrollView,
   Pressable,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
@@ -24,6 +25,27 @@ import { useApi } from '@/hooks/useApi';
 import { useDatabase } from '@/hooks/useDatabase';
 
 const { width, height } = Dimensions.get('window');
+
+// Cross-platform alert function
+const showCrossPlatformAlert = (title: string, message: string, buttons: Array<{text: string, onPress?: () => void}> = [{text: 'OK'}]) => {
+  if (Platform.OS === 'web') {
+    // For web/desktop users
+    const buttonText = buttons.map(btn => btn.text).join(' / ');
+    const result = window.confirm(`${title}\n\n${message}\n\n(${buttonText})`);
+    
+    if (result && buttons[0]?.onPress) {
+      buttons[0].onPress();
+    } else if (!result && buttons[1]?.onPress) {
+      buttons[1].onPress();
+    }
+  } else {
+    // For mobile app users (iOS/Android)
+    Alert.alert(title, message, buttons.map(btn => ({
+      text: btn.text,
+      onPress: btn.onPress,
+    })), { cancelable: false });
+  }
+};
 
 export default function CameraScreen() {
   const [facing, setFacing] = useState<CameraType>('back');
@@ -46,7 +68,7 @@ export default function CameraScreen() {
     (async () => {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Sorry, we need camera roll permissions to make this work!');
+        showCrossPlatformAlert('Permission needed', 'Sorry, we need camera roll permissions to make this work!');
       }
     })();
   }, []);
@@ -82,7 +104,7 @@ export default function CameraScreen() {
         }
       } catch (error) {
         console.error('Error taking picture:', error);
-        Alert.alert('Error', 'Failed to take picture');
+        showCrossPlatformAlert('Error', 'Failed to take picture');
       }
     }
   };
@@ -102,7 +124,7 @@ export default function CameraScreen() {
       }
     } catch (error) {
       console.error('Error picking image:', error);
-      Alert.alert('Error', 'Failed to pick image');
+      showCrossPlatformAlert('Error', 'Failed to pick image');
     }
   };
 
@@ -153,18 +175,11 @@ export default function CameraScreen() {
 
       // Data from parseReceipt already matches ReceiptInfo shape
       const mapped: ReceiptInfo = {
-        total: typeof data.total === 'number' ? data.total : parseFloat(data.total) || 0,
-        merchant: data.merchant ?? '',
-        date: data.date ?? new Date().toLocaleDateString(),
+        total: data.total,
+        merchant: data.merchant,
+        date: data.date,
         category: data.category, // Include AI-determined category
-        items: Array.isArray(data.items)
-          ? data.items.map((it: any) => ({
-              name: it.description ?? it.name ?? 'Item',
-              price: typeof it.amount === 'number' ? it.amount : parseFloat(it.amount) || 0,
-              quantity: it.quantity ?? 1,
-              category: it.category, // Include item-level category
-            }))
-          : [],
+        items: data.items, // Items already have the correct structure from geminiService
       };
 
       setReceiptData(mapped);
@@ -175,7 +190,7 @@ export default function CameraScreen() {
       setShowPanel(true);
     } catch (error) {
       console.error('Error processing image:', error);
-      Alert.alert('Error', 'Failed to process receipt');
+      showCrossPlatformAlert('Error', 'Failed to process receipt');
     } finally {
       setIsProcessing(false);
     }
@@ -198,13 +213,17 @@ export default function CameraScreen() {
   };
 
   const handleAddTransactions = async () => {
+    console.log('handleAddTransactions called');
+    
     if (!receiptData || addingTransactions || selectedItems.length === 0) {
       if (selectedItems.length === 0) {
-        Alert.alert('No Items Selected', 'Please select at least one item to add.');
+        console.log('No items selected, showing alert');
+        showCrossPlatformAlert('No Items Selected', 'Please select at least one item to add.');
       }
       return;
     }
 
+    console.log('Starting to add transactions for', selectedItems.length, 'items');
     setAddingTransactions(true);
     try {
       let successCount = 0;
@@ -227,6 +246,7 @@ export default function CameraScreen() {
 
         console.log('Adding individual transaction:', transactionData);
         const success = await addTransactionToDb(transactionData);
+        console.log(`Transaction ${itemIndex} result:`, success);
         
         if (success) {
           successCount++;
@@ -235,30 +255,57 @@ export default function CameraScreen() {
         }
       }
 
-      if (successCount > 0) {
-        Alert.alert(
-          'Success', 
-          `${successCount} transaction${successCount > 1 ? 's' : ''} added successfully${failureCount > 0 ? `, ${failureCount} failed` : ''}.`,
-          [{ 
-            text: 'OK', 
-            onPress: () => resetCapture() // Return to camera screen
-          }]
-        );
-      } else {
-        Alert.alert(
-          'Error', 
-          'Failed to add any transactions. Please try again.',
+      console.log(`Final results - Success: ${successCount}, Failure: ${failureCount}`);
+
+      // Use requestAnimationFrame to ensure we're on the main thread after state updates
+      requestAnimationFrame(() => {
+        if (successCount > 0) {
+          // Show success message and return to camera
+          console.log('About to show success alert');
+          showCrossPlatformAlert(
+            'Success ✓', 
+            `${successCount} transaction${successCount > 1 ? 's' : ''} added successfully${failureCount > 0 ? `, ${failureCount} failed` : ''}!`,
+            [{ 
+              text: 'Take Another Photo',
+              onPress: () => {
+                console.log('Success: Resetting capture');
+                resetCapture(); // Return to camera screen
+              }
+            }]
+          );
+        } else {
+          // Show error message and stay on current screen
+          console.log('About to show error alert');
+          showCrossPlatformAlert(
+            'Error ⚠️', 
+            'Failed to add any transactions. Please check your connection and try again.',
+            [{ 
+              text: 'Retry', 
+              onPress: () => {
+                console.log('Error: Staying on current screen for retry');
+                // Stay on current screen to allow retry
+              }
+            }]
+          );
+        }
+      });
+    } catch (error) {
+      console.error('Add transactions error:', error);
+      // Use requestAnimationFrame to ensure proper timing
+      requestAnimationFrame(() => {
+        console.log('About to show exception alert');
+        showCrossPlatformAlert(
+          'Error ⚠️', 
+          'An unexpected error occurred while adding transactions. Please try again.',
           [{ 
             text: 'OK', 
             onPress: () => {
+              console.log('Exception: Staying on current screen for retry');
               // Stay on current screen to allow retry
             }
           }]
         );
-      }
-    } catch (error) {
-      console.error('Add transactions error:', error);
-      Alert.alert('Error', 'Failed to add transactions');
+      });
     } finally {
       setAddingTransactions(false);
     }
