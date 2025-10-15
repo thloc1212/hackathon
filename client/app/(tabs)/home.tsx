@@ -191,9 +191,7 @@ export default function HomeScreen() {
             {userName}!
           </Text>
           
-          <Pressable style={dashboardStyles.logoutButton} onPress={handleLogout}>
-            <Text style={dashboardStyles.logoutText}>Logout</Text>
-          </Pressable>
+          {/* Logout moved to Profile screen */}
         </View>
 
         {/* Balance Block with Linear Gradient */}
