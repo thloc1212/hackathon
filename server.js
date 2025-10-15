@@ -338,6 +338,35 @@ app.post("/parse", async (req, res) => {
   }
 });
 
+// New endpoint: produce an insight text for a top spending category using Gemini
+app.post('/insight', async (req, res) => {
+  try {
+    const { category, spent, percentage, totalSpent } = req.body || {};
+
+    if (!category) {
+      return res.status(400).json({ error: 'category required' });
+    }
+
+    const prompt = `You are a friendly personal finance assistant. Given the top spending category: ${category}, the amount spent: ${spent}, the share percentage: ${percentage} and total spent: ${totalSpent}, provide a short actionable saving tip in Vietnamese (2-3 sentences) and include a suggested monthly saving amount as a number. Return only plain text.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: {
+        responseMimeType: 'text/plain',
+      },
+    });
+
+    // Prefer response.text, fallback to parsed
+    const insightText = response?.text || (response?.parsed && JSON.stringify(response.parsed)) || 'No insight available';
+
+    res.json({ insight: insightText });
+  } catch (err) {
+    console.error('Error in /insight handler:', err);
+    res.status(500).json({ error: 'Insight generation failed', detail: err?.message ?? String(err) });
+  }
+});
+
 function buildPrompt() {
   return `Extract structured data (merchant, total, items, categories) from the given receipt text or image. Return JSON only.`;
 }
