@@ -1,6 +1,7 @@
 import { Platform, StyleSheet, View, Pressable, ScrollView, TextInput, Modal, TouchableOpacity, Alert } from 'react-native';
 import { useMemo, useState, useCallback, useEffect } from 'react';
 import Svg, { Path, G } from 'react-native-svg';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -39,6 +40,23 @@ const COLORS = [
   '#FF6B6B', // Pink
   '#5F58C2', // Purple
 ];
+
+// Default categories matching Gemini's Vietnamese categories
+const DEFAULT_CATEGORIES = [
+  { name: 'Ăn uống', color: '#EB1463' },
+  { name: 'Di chuyển', color: '#45B7D1' },
+  { name: 'Mua sắm', color: '#007DEB' },
+  { name: 'Giải trí', color: '#1AC625' },
+  { name: 'Sức khỏe', color: '#FDBE00' },
+  { name: 'Giáo dục', color: '#FF6B6B' },
+  { name: 'Khác', color: '#5F58C2' },
+];
+
+// Storage key for user budgets
+const BUDGETS_STORAGE_KEY = '@category_budgets';
+
+// Default budget for categories
+const DEFAULT_BUDGET = 500000; // 500k VND
 
 const BudgetProgress = ({ categories }: { categories: SpendingCategory[] }) => {
   // Tính toán các segment dựa trên tỷ lệ chi tiêu
@@ -305,33 +323,77 @@ export default function CategoriesScreen() {
   // Get real data from database context
   const { transactions, stats, loading } = useDatabase();
 
+  // State for user-defined budgets
+  const [userBudgets, setUserBudgets] = useState<Record<string, number>>({});
+  const [budgetsLoaded, setBudgetsLoaded] = useState(false);
+
+  // Load user budgets from AsyncStorage on mount
+  useEffect(() => {
+    const loadBudgets = async () => {
+      try {
+        const stored = await AsyncStorage.getItem(BUDGETS_STORAGE_KEY);
+        if (stored) {
+          const budgets = JSON.parse(stored);
+          setUserBudgets(budgets);
+        }
+        setBudgetsLoaded(true);
+      } catch (error) {
+        console.error('Error loading budgets:', error);
+        setBudgetsLoaded(true);
+      }
+    };
+    loadBudgets();
+  }, []);
+
+  // Save user budgets to AsyncStorage
+  const saveBudgets = async (budgets: Record<string, number>) => {
+    try {
+      await AsyncStorage.setItem(BUDGETS_STORAGE_KEY, JSON.stringify(budgets));
+      setUserBudgets(budgets);
+    } catch (error) {
+      console.error('Error saving budgets:', error);
+    }
+  };
+
   // Generate categories from real transaction data
   const realCategories = useMemo(() => {
-    if (!stats?.categorySummary || Object.keys(stats.categorySummary).length === 0) {
-      // Return empty array if no data yet
-      return [];
-    }
+    if (!budgetsLoaded) return []; // Wait for budgets to load
 
-    const categorySpending = stats.categorySummary;
+    const categorySpending = stats?.categorySummary || {};
     const generatedCategories: SpendingCategory[] = [];
-    let colorIndex = 0;
 
-    // Create categories from real spending data
+    // Start with all default categories
+    DEFAULT_CATEGORIES.forEach((defaultCat, index) => {
+      const spent = categorySpending[defaultCat.name] || 0;
+      // Use user-defined budget if exists, otherwise use default
+      const budget = userBudgets[defaultCat.name] || DEFAULT_BUDGET;
+      
+      generatedCategories.push({
+        id: defaultCat.name.toLowerCase().replace(/\s+/g, '-'),
+        name: defaultCat.name,
+        budget: budget, // Use stored budget, not calculated from spending
+        spent: spent,
+        color: defaultCat.color
+      });
+    });
+
+    // Add any additional categories from spending data that aren't in defaults
     Object.entries(categorySpending).forEach(([categoryName, spent]) => {
-      if (spent > 0) { // Only include categories with spending
+      const existsInDefaults = DEFAULT_CATEGORIES.some(def => def.name === categoryName);
+      if (!existsInDefaults && spent > 0) {
+        const budget = userBudgets[categoryName] || Math.max(spent * 1.5, 100000);
         generatedCategories.push({
           id: categoryName.toLowerCase().replace(/\s+/g, '-'),
           name: categoryName,
-          budget: Math.max(spent * 1.5, 100000), // Set budget to 150% of spending or minimum 100k
+          budget: budget,
           spent: spent,
-          color: COLORS[colorIndex % COLORS.length]
+          color: COLORS[generatedCategories.length % COLORS.length]
         });
-        colorIndex++;
       }
     });
 
     return generatedCategories;
-  }, [stats]);
+  }, [stats, userBudgets, budgetsLoaded]);
 
   const [spendingData, setSpendingData] = useState<SpendingData>({
     totalBudget: 0,
@@ -428,6 +490,13 @@ export default function CategoriesScreen() {
 
   const handleEditSpent = (categoryData: Omit<SpendingCategory, 'id'>) => {
     if (!editingCategory) return;
+    
+    // Save the new budget to AsyncStorage
+    const newBudgets = {
+      ...userBudgets,
+      [editingCategory.name]: categoryData.budget
+    };
+    saveBudgets(newBudgets);
     
     setSpendingData(prev => ({
       ...prev,
