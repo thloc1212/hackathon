@@ -1,6 +1,7 @@
-import { Platform, StyleSheet, View, Pressable, ScrollView, TextInput, Modal, TouchableOpacity, Alert } from 'react-native';
+import { Platform, StyleSheet, View, Pressable, ScrollView, TextInput, Modal, TouchableOpacity, Alert, SafeAreaView } from 'react-native';
 import { useMemo, useState, useCallback, useEffect } from 'react';
 import Svg, { Path, G } from 'react-native-svg';
+import { StatusBar } from 'expo-status-bar';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -71,6 +72,9 @@ const SERVER_URL = getServerUrl();
 const DEFAULT_BUDGET = 500000; // 500k
 
 const BudgetProgress = ({ categories }: { categories: SpendingCategory[] }) => {
+  // Filter out income categories (Thu nhập) from statistics
+  const expenseCategories = categories.filter(cat => cat.name !== 'Thu nhập');
+  
   // Tính toán các segment dựa trên tỷ lệ chi tiêu
   const calculateSegments = (cats: SpendingCategory[]) => {
     const totalSpent = cats.reduce((sum, cat) => sum + cat.spent, 0);
@@ -114,16 +118,16 @@ const BudgetProgress = ({ categories }: { categories: SpendingCategory[] }) => {
     });
   };
 
-  // Sắp xếp categories theo % đã chi từ cao xuống thấp và tính toán góc
-  const sortedCategories = calculateSegments([...categories].sort((a, b) => {
+  // Sắp xếp categories theo % đã chi từ cao xuống thấp và tính toán góc (excluding Thu nhập)
+  const sortedCategories = calculateSegments([...expenseCategories].sort((a, b) => {
     const percentA = (a.spent / a.budget) * 100;
     const percentB = (b.spent / b.budget) * 100;
     return percentB - percentA;
   }));
 
-  // Tổng budget và spent
-  const totalBudget = categories.reduce((sum, cat) => sum + cat.budget, 0);
-  const totalSpent = categories.reduce((sum, cat) => sum + cat.spent, 0);
+  // Tổng budget và spent (excluding Thu nhập)
+  const totalBudget = expenseCategories.reduce((sum, cat) => sum + cat.budget, 0);
+  const totalSpent = expenseCategories.reduce((sum, cat) => sum + cat.spent, 0);
   const totalPercentage = Math.round((totalSpent / totalBudget) * 100);
 
   const radius = 80; // Bán kính vòng tròn
@@ -136,7 +140,7 @@ const BudgetProgress = ({ categories }: { categories: SpendingCategory[] }) => {
       <View style={styles.totalContainer}>
         <View style={styles.totalContent}>
           <View style={styles.totalItem}>
-            <IconSymbol name="creditcard" size={24} color="#6B4EFF" />
+            <IconSymbol name="creditcard" size={24} color="#5F58C2" />
             <View style={styles.totalTextContainer}>
               <ThemedText style={styles.totalLabel}>Tổng ngân sách</ThemedText>
               <ThemedText style={styles.totalValue}>{formatCurrency(totalBudget)}</ThemedText>
@@ -167,7 +171,7 @@ const BudgetProgress = ({ categories }: { categories: SpendingCategory[] }) => {
         </View>
       </View>
       <View style={styles.progressCircle}>
-        <Svg height={radius * 2} width={radius * 2} style={StyleSheet.absoluteFill}>
+        <Svg height={160} width={160} viewBox={`0 0 ${radius * 2} ${radius * 2}`}>
           {/* Vẽ các phần chi tiêu */}
           {sortedCategories.map((category, index) => {
             const { startAngle, segmentAngle } = category;
@@ -194,7 +198,6 @@ const BudgetProgress = ({ categories }: { categories: SpendingCategory[] }) => {
             );
           })}
         </Svg>
-
       </View>
     </View>
   );
@@ -568,14 +571,14 @@ export default function CategoriesScreen() {
   };
 
   return (
-    <ThemedView style={styles.container}>
-      <View style={styles.header}>
-        <View style={styles.headerContent}>
+    <SafeAreaView style={[styles.container, { backgroundColor: '#F0F3F8' }]}>
+      <StatusBar style="dark" backgroundColor="#F0F3F8" />
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        {/* Header Section */}
+        <View style={styles.welcomeSection}>
           <ThemedText style={styles.title}>Danh Mục</ThemedText>
         </View>
-      </View>
-      
-      <ScrollView style={styles.content}>
+
         {loading ? (
           <View style={styles.loadingContainer}>
             <ThemedText style={styles.loadingText}>Loading categories...</ThemedText>
@@ -612,38 +615,42 @@ export default function CategoriesScreen() {
           initialData={editingCategory}
         />
       )}
-    </ThemedView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  categoryInfo: {
-    backgroundColor: '#F5F5F5',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
+  // Main container styles matching other screens
+  container: {
+    flex: 1,
+    backgroundColor: '#F0F3F8',
   },
-  categoryName: {
-    fontSize: 18,
+  scrollView: {
+    flex: 1,
+    backgroundColor: '#F0F3F8',
+  },
+  welcomeSection: {
+    paddingHorizontal: 40,
+    paddingTop: 65,
+    paddingBottom: 16,
+  },
+  title: {
+    fontSize: 28,
     fontWeight: 'bold',
-    marginBottom: 8,
+    color: '#5F58C2',
+    marginTop: 4,
   },
-  categoryBudget: {
-    fontSize: 14,
-    color: '#666',
-  },
-  budgetAmount: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#666',
+
+  // Progress container styles
+  progressContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 20,
   },
   totalContainer: {
-    width: '100%',
     backgroundColor: '#fff',
     borderRadius: 16,
-    padding: 16,
+    padding: 20,
     marginBottom: 20,
-    marginHorizontal: 0,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -669,7 +676,7 @@ const styles = StyleSheet.create({
   totalValue: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#6B4EFF',
+    color: '#5F58C2',
   },
   totalProgressContainer: {
     flexDirection: 'row',
@@ -685,13 +692,13 @@ const styles = StyleSheet.create({
   },
   totalProgressFill: {
     height: '100%',
-    backgroundColor: '#6B4EFF',
+    backgroundColor: '#5F58C2',
     borderRadius: 4,
   },
   totalPercent: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#6B4EFF',
+    color: '#5F58C2',
     minWidth: 45,
   },
   totalSubItems: {
@@ -722,167 +729,46 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  totalDivider: {
-    backgroundColor: '#E5E5E5',
-    marginHorizontal: 16,
-  },
-  buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 20,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  deleteButton: {
-    backgroundColor: '#FF6B6B',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-  },
-  deleteButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  budgetSummary: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    marginBottom: 20,
-  },
-  budgetItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  budgetLabel: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 4,
-  },
-  budgetValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  budgetDivider: {
-    width: 1,
-    height: '70%',
-    backgroundColor: '#E5E5E5',
-    marginHorizontal: 10,
-  },
-  headerContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginBottom: 16,
-  },
-  clearButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FF6B6B',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  clearButtonText: {
-    color: '#fff',
-    marginLeft: 8,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  totalBudget: {
-    fontSize: 18,
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  progressRings: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-
-  container: {
-    flex: 1,
-    padding: 16,
-  },
-  header: {
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  content: {
-    flex: 1,
-  },
-  progressContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 32,
-    marginBottom: 24,
-  },
   progressCircle: {
     width: 160,
     height: 160,
     alignItems: 'center',
     justifyContent: 'center',
+    alignSelf: 'center',
+    marginTop: 16,
   },
-  progressTextContainer: {
-    position: 'absolute',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  progressText: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#6B4EFF',
-  },
-  progressLabel: {
-    fontSize: 14,
-    color: '#666',
-  },
+
+  // Categories container styles
   categoriesContainer: {
-    gap: 16,
-    paddingBottom: 80, // Space for FAB
+    paddingHorizontal: 20,
+    gap: 12,
+    paddingBottom: 40,
   },
   categoryCard: {
-    backgroundColor: '#F5F5F5',
+    backgroundColor: '#fff',
     borderRadius: 12,
     padding: 16,
     gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   categoryHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  categoryActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  actionButton: {
-    padding: 8,
-  },
   categoryTitle: {
     fontSize: 16,
     fontWeight: '600',
+    color: '#333',
+  },
+  budgetAmount: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#666',
   },
   categoryAmount: {
     fontSize: 14,
@@ -896,30 +782,10 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#6B4EFF',
+    backgroundColor: '#5F58C2',
     borderRadius: 4,
   },
-  footer: {
-    position: 'absolute',
-    bottom: 24,
-    right: 24,
-  },
-  addButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#6B4EFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
+
   // Modal styles
   modalOverlay: {
     flex: 1,
@@ -933,11 +799,30 @@ const styles = StyleSheet.create({
     padding: 20,
     gap: 16,
   },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     textAlign: 'center',
     marginBottom: 8,
+    color: '#333',
+  },
+  categoryInfo: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  categoryName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    color: '#333',
   },
   inputContainer: {
     gap: 8,
@@ -945,6 +830,7 @@ const styles = StyleSheet.create({
   inputLabel: {
     fontSize: 14,
     fontWeight: '500',
+    color: '#5F58C2',
   },
   input: {
     borderWidth: 1,
@@ -952,29 +838,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 8,
-  },
-  cancelButton: {
-    flex: 1,
-    backgroundColor: '#F5F5F5',
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  saveButton: {
-    flex: 1,
-    backgroundColor: '#6B4EFF',
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  buttonText: {
-    fontSize: 16,
-    fontWeight: '600',
+    backgroundColor: '#F9F9F9',
   },
   colorPicker: {
     flexDirection: 'row',
@@ -992,11 +856,36 @@ const styles = StyleSheet.create({
   selectedColor: {
     borderColor: '#000',
   },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: '#F5F5F5',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  saveButton: {
+    flex: 1,
+    backgroundColor: '#5F58C2',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  buttonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+
+  // Loading and empty states
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingTop: 50,
+    paddingTop: 80,
   },
   loadingText: {
     fontSize: 16,

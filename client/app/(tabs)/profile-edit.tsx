@@ -264,6 +264,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 24,
+    paddingTop: 50,
     fontWeight: 'bold',
     color: '#333',
     paddingHorizontal: 20,
@@ -312,18 +313,20 @@ const styles = StyleSheet.create({
   },
   cameraIcon: {
     position: 'absolute',
-    bottom: 0,
-    right: 0,
+    bottom: 20,
+    right: 20,
     backgroundColor: PRIMARY_COLOR,
     borderRadius: 15,
     padding: 5,
     borderWidth: 2,
     borderColor: '#FFF',
+    aspectRatio: 1,
+    width: '17%'
   },
   avatarActionsVertical: {
     flex: 1,
     justifyContent: 'space-evenly',
-    height: 100,
+    height: 50,
   },
   actionButton: {
     paddingVertical: 7,
@@ -335,6 +338,7 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '600',
     fontSize: 14,
+
   },
   formCard: {
     backgroundColor: '#FDFDFD',

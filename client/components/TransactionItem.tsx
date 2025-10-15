@@ -408,6 +408,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   dropdown: {
+    position: 'absolute',
+    top: 90,
+    left: 0,
+    right: 0,
     marginTop: 8,
     borderWidth: 1,
     borderColor: '#d1d5db',
@@ -419,6 +423,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+    zIndex: 10,
   },
   dropdownScroll: {
     maxHeight: 200,

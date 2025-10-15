@@ -15,6 +15,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
 import AuthService from '@/lib/authService';
+import { StatusBar } from 'expo-status-bar';
+
 
 // Giả định các import này đã được cấu hình trong dự án của bạn
 import { ThemedText } from '@/components/themed-text';
@@ -185,6 +187,8 @@ export default function ProfileScreen() {
 
   return (
     <ThemedView style={styles.container}> 
+      <StatusBar style="dark" backgroundColor="#F0F3F8" />
+
       <ThemedText style={styles.title}>Thông tin cá nhân</ThemedText>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -273,6 +277,7 @@ const styles = StyleSheet.create({
     color: '#333',
     paddingHorizontal: 20,
     marginBottom: 20,
+    paddingTop: 50
   },
   scrollContent: {
     paddingHorizontal: 20,

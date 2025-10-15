@@ -593,6 +593,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 53,
     marginTop: height * 0.3,
     minHeight: height * 0.7,
+    overflow: 'hidden',
   },
   backButton: {
     position: 'absolute',
