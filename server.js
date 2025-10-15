@@ -12,6 +12,39 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json({ limit: "20mb" }));
 
+// Logging middleware - logs all requests and responses
+app.use((req, res, next) => {
+  const startTime = Date.now();
+  
+  // Log incoming request
+  console.log(`\n[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  console.log('Headers:', JSON.stringify(req.headers, null, 2));
+  
+  if (req.body && Object.keys(req.body).length > 0) {
+    // For large bodies like images, just log a summary
+    if (req.body.imageBase64) {
+      console.log('Body:', {
+        ...req.body,
+        imageBase64: `[IMAGE DATA: ${req.body.imageBase64.length} characters]`
+      });
+    } else {
+      console.log('Body:', JSON.stringify(req.body, null, 2));
+    }
+  }
+
+  // Capture original json method to log responses
+  const originalJson = res.json;
+  res.json = function(data) {
+    const duration = Date.now() - startTime;
+    console.log(`\n[${new Date().toISOString()}] Response ${res.statusCode} for ${req.method} ${req.url} (${duration}ms)`);
+    console.log('Response Data:', JSON.stringify(data, null, 2));
+    console.log('--- End Response ---\n');
+    return originalJson.call(this, data);
+  };
+
+  next();
+});
+
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 // Route test
@@ -254,6 +287,251 @@ app.get('/auth/profile', async (req, res) => {
 
   } catch (error) {
     console.error('Profile error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      detail: error.message 
+    });
+  }
+});
+
+// Transaction Routes
+
+// Middleware to verify session for protected routes
+const verifySession = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ 
+        error: 'Authorization header required' 
+      });
+    }
+
+    const sessionId = authHeader.replace('Bearer ', '');
+    const session = await database.findSessionById(sessionId);
+    
+    if (!session || new Date(session.expiresAt) < new Date()) {
+      return res.status(401).json({ 
+        error: 'Invalid or expired session' 
+      });
+    }
+
+    const user = await database.findUserById(session.userId);
+    if (!user) {
+      return res.status(401).json({ 
+        error: 'User not found' 
+      });
+    }
+
+    req.user = user;
+    req.session = session;
+    next();
+  } catch (error) {
+    console.error('Session verification error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      detail: error.message 
+    });
+  }
+};
+
+// Create transaction
+app.post('/transactions', verifySession, async (req, res) => {
+  try {
+    const { amount, category, description, date, type, merchant, items } = req.body;
+
+    // Validate required fields
+    if (!amount || !category || !description || !type) {
+      return res.status(400).json({ 
+        error: 'Amount, category, description, and type are required' 
+      });
+    }
+
+    if (!['income', 'expense'].includes(type)) {
+      return res.status(400).json({ 
+        error: 'Type must be either "income" or "expense"' 
+      });
+    }
+
+    const transactionData = {
+      userId: req.user.id,
+      amount: parseFloat(amount),
+      category,
+      description,
+      date: date || new Date().toISOString().split('T')[0], // YYYY-MM-DD format
+      type,
+      merchant: merchant || null,
+      items: items || []
+    };
+
+    const newTransaction = await database.createTransaction(transactionData);
+
+    res.status(201).json({
+      success: true,
+      message: 'Transaction created successfully',
+      data: newTransaction
+    });
+
+  } catch (error) {
+    console.error('Create transaction error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      detail: error.message 
+    });
+  }
+});
+
+// Get user transactions
+app.get('/transactions', verifySession, async (req, res) => {
+  try {
+    const limit = req.query.limit ? parseInt(req.query.limit) : null;
+    const offset = req.query.offset ? parseInt(req.query.offset) : 0;
+
+    const transactions = await database.findTransactionsByUserId(req.user.id, limit, offset);
+
+    res.json({
+      success: true,
+      data: transactions,
+      count: transactions.length
+    });
+
+  } catch (error) {
+    console.error('Get transactions error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      detail: error.message 
+    });
+  }
+});
+
+// Get user transaction statistics
+app.get('/transactions/stats', verifySession, async (req, res) => {
+  try {
+    const stats = await database.getUserTransactionStats(req.user.id);
+
+    res.json({
+      success: true,
+      data: stats
+    });
+
+  } catch (error) {
+    console.error('Get stats error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      detail: error.message 
+    });
+  }
+});
+
+// Get single transaction
+app.get('/transactions/:id', verifySession, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const transaction = await database.findTransactionById(id);
+
+    if (!transaction) {
+      return res.status(404).json({ 
+        error: 'Transaction not found' 
+      });
+    }
+
+    // Check if transaction belongs to user
+    if (transaction.userId !== req.user.id) {
+      return res.status(403).json({ 
+        error: 'Access denied' 
+      });
+    }
+
+    res.json({
+      success: true,
+      data: transaction
+    });
+
+  } catch (error) {
+    console.error('Get transaction error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      detail: error.message 
+    });
+  }
+});
+
+// Update transaction
+app.put('/transactions/:id', verifySession, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updateData = req.body;
+
+    const transaction = await database.findTransactionById(id);
+    if (!transaction) {
+      return res.status(404).json({ 
+        error: 'Transaction not found' 
+      });
+    }
+
+    // Check if transaction belongs to user
+    if (transaction.userId !== req.user.id) {
+      return res.status(403).json({ 
+        error: 'Access denied' 
+      });
+    }
+
+    // Validate type if provided
+    if (updateData.type && !['income', 'expense'].includes(updateData.type)) {
+      return res.status(400).json({ 
+        error: 'Type must be either "income" or "expense"' 
+      });
+    }
+
+    // Convert amount to number if provided
+    if (updateData.amount !== undefined) {
+      updateData.amount = parseFloat(updateData.amount);
+    }
+
+    const updatedTransaction = await database.updateTransaction(id, updateData);
+
+    res.json({
+      success: true,
+      message: 'Transaction updated successfully',
+      data: updatedTransaction
+    });
+
+  } catch (error) {
+    console.error('Update transaction error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      detail: error.message 
+    });
+  }
+});
+
+// Delete transaction
+app.delete('/transactions/:id', verifySession, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const transaction = await database.findTransactionById(id);
+
+    if (!transaction) {
+      return res.status(404).json({ 
+        error: 'Transaction not found' 
+      });
+    }
+
+    // Check if transaction belongs to user
+    if (transaction.userId !== req.user.id) {
+      return res.status(403).json({ 
+        error: 'Access denied' 
+      });
+    }
+
+    await database.deleteTransaction(id);
+
+    res.json({
+      success: true,
+      message: 'Transaction deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Delete transaction error:', error);
     res.status(500).json({ 
       error: 'Internal server error',
       detail: error.message 
