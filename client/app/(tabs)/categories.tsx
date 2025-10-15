@@ -30,14 +30,13 @@ const describeArc = (x: number, y: number, radius: number, startAngle: number, e
 };
 
 const COLORS = [
-  '#FF6B6B', // Red
-  '#4ECDC4', // Teal
-  '#45B7D1', // Blue
-  '#96CEB4', // Green
-  '#FFEEAD', // Yellow
-  '#D4A5A5', // Pink
-  '#9B89B3', // Purple
-  '#E9967A', // Peach
+  '#EB1463', // Red
+  '#45B7D1', // Teal
+  '#007DEB', // Blue
+  '#1AC625', // Green
+  '#FDBE00', // Yellow
+  '#FF6B6B', // Pink
+  '#5F58C2', // Purple
 ];
 
 const BudgetProgress = ({ categories }: { categories: SpendingCategory[] }) => {
