@@ -13,6 +13,9 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
+import AuthService from '@/lib/authService';
 
 // Giả định các import này đã được cấu hình trong dự án của bạn
 import { ThemedText } from '@/components/themed-text';
@@ -44,11 +47,16 @@ export default function ProfileScreen() {
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const router = useRouter();
 
+
+  const isFocused = useIsFocused();
 
   useEffect(() => {
-    loadProfile();
-  }, []);
+    if (isFocused) {
+      loadProfile();
+    }
+  }, [isFocused]);
 
   const loadProfile = async () => {
     try {
@@ -78,6 +86,12 @@ export default function ProfileScreen() {
       Alert.alert('Lỗi', 'Không thể lưu thông tin.');
     }
   };
+
+  useEffect(() => {
+    // load auth user if present
+    const u = AuthService.getCurrentUser();
+    if (u && u.email) setEmail(u.email);
+  }, []);
 
   const pickImage = async () => {
     try {
@@ -125,9 +139,9 @@ export default function ProfileScreen() {
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
         
-        {/* Phần Avatar và Actions */}
+        {/* Phần Avatar (chỉ hiển thị, không chỉnh sửa) */}
         <View style={styles.avatarCard}>
-          <Pressable onPress={pickImage} style={styles.avatarWrapper}>
+          <View style={styles.avatarWrapper}>
             {avatarUri ? (
               <Image source={{ uri: avatarUri }} style={styles.avatar} />
             ) : (
@@ -135,81 +149,54 @@ export default function ProfileScreen() {
                 <ThemedText style={styles.avatarInitial}>{(name && name[0]) || 'U'}</ThemedText>
               </View>
             )}
-            <View style={styles.cameraIcon}>
-              <IconSymbol name="camera" size={20} color="#FFF" />
-            </View>
-          </Pressable>
-
-          <View style={styles.avatarActionsVertical}>
           </View>
-          <Pressable style={[styles.actionButton, { backgroundColor: PRIMARY_COLOR }]} onPress={removeAvatar}>
-            <ThemedText style={styles.actionButtonText}>Xóa Ảnh</ThemedText>
-          </Pressable>
         </View>
 
 
         {/* Phần Form */}
         <View style={styles.formCard}>
-          {/* Tên */}
+          {/* Tên (chỉ hiển thị) */}
           <View style={styles.inputGroup}>
             <ThemedText style={styles.label}>Họ và Tên</ThemedText>
-            <TextInput
-              style={[styles.input, { borderColor: PRIMARY_COLOR + '50', color: colors.text }]}
-              placeholder="Nhập họ tên"
-              placeholderTextColor={PRIMARY_COLOR + '80'}
-              value={name}
-              onChangeText={setName}
-            />
+            <ThemedText style={[styles.input, { color: colors.text, backgroundColor: '#F4F3FF' }]}>{name || '-'}</ThemedText>
           </View>
 
-          {/* Email */}
+          {/* Email (chỉ hiển thị) */}
           <View style={styles.inputGroup}>
             <ThemedText style={styles.label}>Email</ThemedText>
-            <TextInput
-              style={[styles.input, { borderColor: PRIMARY_COLOR + '50', color: colors.text }]}
-              placeholder="example@email.com"
-              placeholderTextColor={PRIMARY_COLOR + '80'}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              value={email}
-              onChangeText={setEmail}
-            />
+            <ThemedText style={[styles.input, { color: colors.text, backgroundColor: '#F4F3FF' }]}>{email || '-'}</ThemedText>
           </View>
 
-          {/* Ngày sinh */}
+          {/* Ngày sinh (chỉ hiển thị) */}
           <View style={styles.inputGroup}>
             <ThemedText style={styles.label}>Ngày sinh</ThemedText>
-            <TextInput
-              style={[styles.input, { borderColor: PRIMARY_COLOR + '50', color: colors.text }]}
-              placeholder="dd/mm/yyyy"
-              placeholderTextColor={PRIMARY_COLOR + '80'}
-              keyboardType="numeric"
-              value={dateOfBirth}
-              onChangeText={setDateOfBirth}
-            />
+            <ThemedText style={[styles.input, { color: colors.text, backgroundColor: '#F4F3FF' }]}>{dateOfBirth || '-'}</ThemedText>
           </View>
 
-          {/* Bio/Ghi chú */}
+          {/* Bio/Ghi chú (chỉ hiển thị) */}
           <View style={styles.inputGroup}>
             <ThemedText style={styles.label}>Tiểu sử/Ghi chú</ThemedText>
-            <TextInput
-              style={[styles.textArea, { borderColor: PRIMARY_COLOR + '50', color: colors.text }]}
-              placeholder="Vài dòng giới thiệu về bạn"
-              placeholderTextColor={PRIMARY_COLOR + '80'}
-              multiline
-              numberOfLines={3}
-              value={bio}
-              onChangeText={setBio}
-            />
+            <ThemedText style={[styles.textArea, { color: colors.text, backgroundColor: '#F4F3FF' }]}>{bio || '-'}</ThemedText>
           </View>
 
           {/* Action Buttons */}
           <View style={styles.actionsRow}>
-            <Pressable style={[styles.button, styles.reloadButton]} onPress={loadProfile}>
-              <ThemedText style={styles.reloadButtonText}>Huỷ</ThemedText>
+            <Pressable style={[styles.button, styles.reloadButton]} onPress={() => router.push('./profile-edit')}>
+              <ThemedText style={styles.reloadButtonText}>Chỉnh sửa</ThemedText>
             </Pressable>
-            <Pressable style={[styles.button, styles.saveButton]} onPress={saveProfile}>
-              <ThemedText style={styles.buttonText}>Lưu</ThemedText>
+            <Pressable style={[styles.button, styles.saveButton]} onPress={async () => {
+              // logout
+              try {
+                await AuthService.signout();
+                Alert.alert('Đã đăng xuất');
+                // router will be handled by AuthService listeners in layout, but as fallback redirect to landing
+                try { router.replace('/'); } catch (e) { /* noop */ }
+              } catch (err) {
+                console.warn('Logout failed', err);
+                Alert.alert('Lỗi', 'Đăng xuất thất bại');
+              }
+            }}>
+              <ThemedText style={styles.buttonText}>Đăng xuất</ThemedText>
             </Pressable>
           </View>
         </View>
