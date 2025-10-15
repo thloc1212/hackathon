@@ -8,16 +8,20 @@ import {
   Dimensions,
   Image,
   ScrollView,
+  Pressable,
+  ActivityIndicator,
 } from 'react-native';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { useIsFocused } from '@react-navigation/native';
-import { Colors } from '@/constants/theme';
+import { Ionicons } from '@expo/vector-icons';
+import { Colors, FontFamily, FontWeight } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ReceiptInfo } from '@/types';
 import { formatCurrency } from '@/utils/formatters';
 import { useApi } from '@/hooks/useApi';
+import { useDatabase } from '@/hooks/useDatabase';
 
 const { width, height } = Dimensions.get('window');
 
@@ -28,9 +32,14 @@ export default function CameraScreen() {
   const [receiptData, setReceiptData] = useState<ReceiptInfo | null>(null);
   const [showPanel, setShowPanel] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [selectedItems, setSelectedItems] = useState<number[]>([]);
+  const [editMode, setEditMode] = useState(false);
+
+  const [addingTransactions, setAddingTransactions] = useState(false);
   const cameraRef = useRef<CameraView>(null);
   const colorScheme = useColorScheme();
-  const { parseReceipt, addTransaction } = useApi();
+  const { parseReceipt } = useApi();
+  const { addTransaction: addTransactionToDb } = useDatabase();
   const isFocused = useIsFocused();
 
   useEffect(() => {
@@ -159,6 +168,10 @@ export default function CameraScreen() {
       };
 
       setReceiptData(mapped);
+      // Pre-select all items (all checkboxes ticked by default)
+      if (mapped.items && Array.isArray(mapped.items)) {
+        setSelectedItems(mapped.items.map((_, index) => index));
+      }
       setShowPanel(true);
     } catch (error) {
       console.error('Error processing image:', error);
@@ -172,7 +185,86 @@ export default function CameraScreen() {
     setCapturedImage(null);
     setReceiptData(null);
     setShowPanel(false);
+    setSelectedItems([]);
+    setEditMode(false);
   };
+
+  const toggleItemSelection = (index: number) => {
+    setSelectedItems(prev => 
+      prev.includes(index) 
+        ? prev.filter(i => i !== index)
+        : [...prev, index]
+    );
+  };
+
+  const handleAddTransactions = async () => {
+    if (!receiptData || addingTransactions || selectedItems.length === 0) {
+      if (selectedItems.length === 0) {
+        Alert.alert('No Items Selected', 'Please select at least one item to add.');
+      }
+      return;
+    }
+
+    setAddingTransactions(true);
+    try {
+      let successCount = 0;
+      let failureCount = 0;
+
+      // Add each selected item as a separate transaction
+      for (const itemIndex of selectedItems) {
+        const item = receiptData.items[itemIndex];
+        if (!item) continue;
+
+        const transactionData = {
+          amount: Math.abs(item.price || 0), // Use item's amount
+          category: item.category || receiptData.category || 'Khác', // Use item's category, fallback to overall category
+          description: `${receiptData.merchant ? receiptData.merchant + ' - ' : ''}${item.name || 'Item'}`,
+          date: new Date().toISOString().split('T')[0], // Today's date in YYYY-MM-DD format
+          type: 'expense' as const, // Default to expense for receipts
+          merchant: receiptData.merchant,
+          items: [] // Each transaction is for a single item, no items array needed
+        };
+
+        console.log('Adding individual transaction:', transactionData);
+        const success = await addTransactionToDb(transactionData);
+        
+        if (success) {
+          successCount++;
+        } else {
+          failureCount++;
+        }
+      }
+
+      if (successCount > 0) {
+        Alert.alert(
+          'Success', 
+          `${successCount} transaction${successCount > 1 ? 's' : ''} added successfully${failureCount > 0 ? `, ${failureCount} failed` : ''}.`,
+          [{ 
+            text: 'OK', 
+            onPress: () => resetCapture() // Return to camera screen
+          }]
+        );
+      } else {
+        Alert.alert(
+          'Error', 
+          'Failed to add any transactions. Please try again.',
+          [{ 
+            text: 'OK', 
+            onPress: () => {
+              // Stay on current screen to allow retry
+            }
+          }]
+        );
+      }
+    } catch (error) {
+      console.error('Add transactions error:', error);
+      Alert.alert('Error', 'Failed to add transactions');
+    } finally {
+      setAddingTransactions(false);
+    }
+  };
+
+  // Removed OCR text editing functionality - users can't edit OCR text anymore
 
   if (capturedImage) {
     return (
@@ -198,71 +290,131 @@ export default function CameraScreen() {
           <View style={[styles.receiptPanel, { backgroundColor: Colors[colorScheme ?? 'light'].background }]}>
             <View style={styles.panelHeader}>
               <Text style={[styles.panelTitle, { color: Colors[colorScheme ?? 'light'].text }]}>
-                Receipt Information
+                Receipt Analysis
               </Text>
               <TouchableOpacity onPress={() => setShowPanel(false)}>
-                <Text style={[styles.closeButton, { color: Colors[colorScheme ?? 'light'].text }]}>✕</Text>
+                <Ionicons name="close" size={24} color={Colors[colorScheme ?? 'light'].text} />
               </TouchableOpacity>
             </View>
             
-            <ScrollView style={styles.receiptContent}>
-              {receiptData.merchant && (
-                <View style={styles.receiptRow}>
-                  <Text style={[styles.receiptLabel, { color: Colors[colorScheme ?? 'light'].text }]}>
-                    Merchant:
-                  </Text>
-                  <Text style={[styles.receiptValue, { color: Colors[colorScheme ?? 'light'].text }]}>
-                    {receiptData.merchant}
-                  </Text>
-                </View>
-              )}
-              
-              {receiptData.date && (
-                <View style={styles.receiptRow}>
-                  <Text style={[styles.receiptLabel, { color: Colors[colorScheme ?? 'light'].text }]}>
-                    Date:
-                  </Text>
-                  <Text style={[styles.receiptValue, { color: Colors[colorScheme ?? 'light'].text }]}>
-                    {receiptData.date}
-                  </Text>
-                </View>
-              )}
+            <ScrollView style={styles.receiptContent} showsVerticalScrollIndicator={false}>
+                <View style={styles.responseContainer}>
+                  {/* Merchant Card */}
+                  {receiptData.merchant && (
+                    <View style={styles.merchantCard}>
+                      <View style={styles.merchantIconContainer}>
+                        <Ionicons name="storefront" size={24} color="#5F58C2" />
+                      </View>
+                      <View>
+                        <Text style={[styles.merchantLabel, { color: Colors[colorScheme ?? 'light'].icon }]}>
+                          Store
+                        </Text>
+                        <Text style={[styles.merchantName, { color: Colors[colorScheme ?? 'light'].text }]}>
+                          {receiptData.merchant}
+                        </Text>
+                      </View>
+                    </View>
+                  )}
 
-              {receiptData.category && (
-                <View style={styles.receiptRow}>
-                  <Text style={[styles.receiptLabel, { color: Colors[colorScheme ?? 'light'].text }]}>
-                    Category:
-                  </Text>
-                  <Text style={[styles.receiptValue, { color: Colors[colorScheme ?? 'light'].tint, fontWeight: '600' }]}>
-                    {receiptData.category}
-                  </Text>
-                </View>
-              )}
+                  {/* Total Amount Card */}
+                  <View style={styles.totalCard}>
+                    <Text style={[styles.totalLabel, { color: Colors[colorScheme ?? 'light'].icon }]}>
+                      Total Amount
+                    </Text>
+                    <Text style={styles.totalAmount}>
+                      {formatCurrency(receiptData.total)}
+                    </Text>
+                    {receiptData.category && (
+                      <View style={styles.categoryBadge}>
+                        <Text style={styles.categoryText}>{receiptData.category}</Text>
+                      </View>
+                    )}
+                  </View>
 
-              <Text style={[styles.itemsHeader, { color: Colors[colorScheme ?? 'light'].text }]}>
-                Items:
-              </Text>
-              
-              {receiptData.items.map((item, index: number) => (
-                <View key={index} style={styles.itemRow}>
-                  <Text style={[styles.itemName, { color: Colors[colorScheme ?? 'light'].text }]}>
-                    {item.quantity ? `${item.quantity}x ` : ''}{item.name}
-                  </Text>
-                  <Text style={[styles.itemPrice, { color: Colors[colorScheme ?? 'light'].text }]}>
-                    {formatCurrency(item.price)}
-                  </Text>
+                  {/* Items Selection */}
+                  {receiptData.items && Array.isArray(receiptData.items) && receiptData.items.length > 0 && (
+                    <View style={styles.itemsSection}>
+                      <Text style={[styles.itemsSectionTitle, { color: Colors[colorScheme ?? 'light'].text }]}>
+                        Items Found
+                      </Text>
+                      
+                      <View style={styles.itemsHeader}>
+                        <Text style={[styles.itemsSubtitle, { color: Colors[colorScheme ?? 'light'].icon }]}>
+                          Select which items you want to add:
+                        </Text>
+                        <Pressable 
+                          style={styles.selectAllButton}
+                          onPress={() => {
+                            if (selectedItems.length === receiptData.items?.length) {
+                              setSelectedItems([]); // Deselect all
+                            } else {
+                              setSelectedItems(receiptData.items?.map((_, index) => index) || []); // Select all
+                            }
+                          }}
+                        >
+                          <Text style={styles.selectAllText}>
+                            {selectedItems.length === receiptData.items?.length ? 'Deselect All' : 'Select All'}
+                          </Text>
+                        </Pressable>
+                      </View>
+                      
+                      <View style={styles.itemsList}>
+                        {receiptData.items.map((item, index: number) => (
+                          <Pressable 
+                            key={index} 
+                            style={[
+                              styles.itemCard,
+                              selectedItems.includes(index) && styles.itemCardSelected
+                            ]}
+                            onPress={() => toggleItemSelection(index)}
+                          >
+                            <View style={styles.checkbox}>
+                              {selectedItems.includes(index) ? (
+                                <Ionicons name="checkbox" size={24} color="#5F58C2" />
+                              ) : (
+                                <Ionicons name="square-outline" size={24} color="#cbd5e1" />
+                              )}
+                            </View>
+                            <View style={styles.itemInfo}>
+                              <Text style={[styles.itemName, { color: Colors[colorScheme ?? 'light'].text }]}>
+                                {item.quantity ? `${item.quantity}x ` : ''}{item.name}
+                              </Text>
+                              <Text style={[styles.itemPrice, { color: '#059669' }]}>
+                                {formatCurrency(item.price)}
+                              </Text>
+                            </View>
+                            {item.category && (
+                              <View style={styles.itemCategoryBadge}>
+                                <Text style={styles.itemCategoryText}>{item.category}</Text>
+                              </View>
+                            )}
+                          </Pressable>
+                        ))}
+                      </View>
+                    </View>
+                  )}
                 </View>
-              ))}
-              
-              <View style={styles.totalRow}>
-                <Text style={[styles.totalLabel, { color: Colors[colorScheme ?? 'light'].text }]}>
-                  Total:
-                </Text>
-                <Text style={[styles.totalValue, { color: Colors[colorScheme ?? 'light'].tint }]}>
-                  {formatCurrency(receiptData.total)}
-                </Text>
-              </View>
             </ScrollView>
+
+            {/* Action Buttons */}
+              <View style={styles.modalActions}>
+                <Pressable
+                  style={[styles.actionButton, styles.addButton, addingTransactions && { opacity: 0.6 }]}
+                  onPress={handleAddTransactions}
+                  disabled={addingTransactions || selectedItems.length === 0}
+                >
+                  {addingTransactions ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <>
+                      <Ionicons name="add" size={18} color="#fff" />
+                      <Text style={styles.addButtonText}>
+                        Add {selectedItems.length} Item{selectedItems.length !== 1 ? 's' : ''}
+                      </Text>
+                    </>
+                  )}
+                </Pressable>
+              </View>
           </View>
         )}
       </View>
@@ -275,7 +427,7 @@ export default function CameraScreen() {
         <CameraView ref={cameraRef} style={styles.camera} facing={facing}>
           <View style={styles.cameraControls}>
             <TouchableOpacity style={styles.flipButton} onPress={toggleCameraFacing}>
-              <Text style={styles.buttonIcon}>🔄</Text>
+              <Ionicons name="camera-reverse" size={24} color="white" />
             </TouchableOpacity>
             
             <TouchableOpacity style={styles.captureButton} onPress={takePicture}>
@@ -283,7 +435,7 @@ export default function CameraScreen() {
             </TouchableOpacity>
             
             <TouchableOpacity style={styles.albumButton} onPress={pickImage}>
-              <Text style={styles.buttonIcon}>📷</Text>
+              <Ionicons name="images" size={24} color="white" />
             </TouchableOpacity>
           </View>
         </CameraView>
@@ -449,24 +601,10 @@ const styles = StyleSheet.create({
   receiptValue: {
     fontSize: 16,
   },
-  itemsHeader: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginTop: 20,
-    marginBottom: 10,
-  },
   itemRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingVertical: 6,
-  },
-  itemName: {
-    fontSize: 14,
-    flex: 1,
-  },
-  itemPrice: {
-    fontSize: 14,
-    fontWeight: '500',
   },
   totalRow: {
     flexDirection: 'row',
@@ -476,10 +614,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 2,
     borderTopColor: '#333',
   },
-  totalLabel: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
   totalValue: {
     fontSize: 18,
     fontWeight: 'bold',
@@ -488,8 +622,215 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
   },
-  buttonIcon: {
-    fontSize: 24,
+  // New styles for item selection interface
+  responseContainer: {
+    gap: 16,
+  },
+  merchantCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  merchantIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(95, 88, 194, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  merchantLabel: {
+    fontSize: 12,
+    fontFamily: FontFamily.medium,
+    fontWeight: FontWeight.medium,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  merchantName: {
+    fontSize: 16,
+    fontFamily: FontFamily.semiBold,
+    fontWeight: FontWeight.semiBold,
+    marginTop: 2,
+  },
+  totalCard: {
+    backgroundColor: 'rgba(95, 88, 194, 0.05)',
+    padding: 20,
+    borderRadius: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(95, 88, 194, 0.2)',
+  },
+  totalLabel: {
+    fontSize: 14,
+    fontFamily: FontFamily.medium,
+    fontWeight: FontWeight.medium,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  totalAmount: {
+    fontSize: 28,
+    fontFamily: FontFamily.bold,
+    fontWeight: FontWeight.bold,
+    color: '#5F58C2',
+    marginTop: 4,
+    marginBottom: 12,
+  },
+  categoryBadge: {
+    backgroundColor: 'rgba(95, 88, 194, 0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(95, 88, 194, 0.3)',
+  },
+  categoryText: {
+    fontSize: 12,
+    fontFamily: FontFamily.medium,
+    fontWeight: FontWeight.medium,
+    color: '#5F58C2',
+  },
+  itemsSection: {
+    marginTop: 8,
+  },
+  itemsSectionTitle: {
+    fontSize: 18,
+    fontFamily: FontFamily.bold,
+    fontWeight: FontWeight.bold,
+    marginBottom: 4,
+  },
+  itemsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  itemsSubtitle: {
+    fontSize: 14,
+    fontFamily: FontFamily.regular,
+    fontWeight: FontWeight.regular,
+  },
+  selectAllButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: 'rgba(95, 88, 194, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(95, 88, 194, 0.3)',
+  },
+  selectAllText: {
+    fontSize: 12,
+    fontFamily: FontFamily.medium,
+    fontWeight: FontWeight.medium,
+    color: '#5F58C2',
+  },
+  itemsList: {
+    gap: 8,
+  },
+  itemCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  itemCardSelected: {
+    borderColor: '#5F58C2',
+    backgroundColor: 'rgba(95, 88, 194, 0.02)',
+  },
+  checkbox: {
+    marginRight: 12,
+  },
+  itemInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  itemName: {
+    fontSize: 16,
+    fontFamily: FontFamily.semiBold,
+    fontWeight: FontWeight.semiBold,
+    marginBottom: 4,
+  },
+  itemPrice: {
+    fontSize: 14,
+    fontFamily: FontFamily.bold,
+    fontWeight: FontWeight.bold,
+  },
+  itemCategoryBadge: {
+    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  itemCategoryText: {
+    fontSize: 10,
+    fontFamily: FontFamily.medium,
+    fontWeight: FontWeight.medium,
+    color: '#475569',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    padding: 20,
+    gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+    backgroundColor: 'white',
+  },
+  actionButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  editButton: {
+    backgroundColor: 'rgba(95, 88, 194, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(95, 88, 194, 0.3)',
+  },
+  addButton: {
+    backgroundColor: '#5F58C2',
+  },
+  editButtonText: {
+    color: '#5F58C2',
+    fontSize: 14,
+    fontFamily: FontFamily.semiBold,
+    fontWeight: FontWeight.semiBold,
+  },
+  addButtonText: {
     color: 'white',
+    fontSize: 14,
+    fontFamily: FontFamily.semiBold,
+    fontWeight: FontWeight.semiBold,
+  },
+  // Edit Mode Styles
+  editContainer: {
+    gap: 16,
+  },
+  editTitle: {
+    fontSize: 18,
+    fontFamily: FontFamily.bold,
+    fontWeight: FontWeight.bold,
+    textAlign: 'center',
+  },
+  editSubtitle: {
+    fontSize: 14,
+    fontFamily: FontFamily.regular,
+    fontWeight: FontWeight.regular,
+    textAlign: 'center',
+    marginBottom: 8,
   },
 });

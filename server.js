@@ -692,10 +692,16 @@ app.post("/parse", async (req, res) => {
           properties: {
             merchant: { type: Type.STRING },
             total: { type: Type.NUMBER },
+            type: {
+              type: Type.STRING,
+              description: "Type of transaction - income for salary/earnings, expense for purchases/spending",
+              enum: ["income", "expense"],
+            },
             category: {
               type: Type.STRING,
-              description: "The primary spending category for this entire transaction, determined by analyzing all items purchased. Choose the most dominant category. If unsure, try searching on the Internet what the brand is about. Choose 'Khác' when unknown.",
+              description: "The primary category for this transaction. For income use 'Thu nhập', for expenses choose the most relevant category.",
               enum: [
+                "Thu nhập",
                 "Ăn uống",
                 "Di chuyển",
                 "Mua sắm",
@@ -714,8 +720,9 @@ app.post("/parse", async (req, res) => {
                   amount: { type: Type.NUMBER },
                   category: {
                     type: Type.STRING,
-                    description: "The category of this specific item. If unsure, try searching on the Internet what it is about. Choose 'Khác' when unknown.",
+                    description: "The category of this specific item.",
                     enum: [
+                      "Thu nhập",
                       "Ăn uống",
                       "Di chuyển",
                       "Mua sắm",
@@ -729,7 +736,7 @@ app.post("/parse", async (req, res) => {
               },
             },
           },
-          required: ["category"],
+          required: ["category", "type"],
         },
       },
     });
@@ -756,6 +763,8 @@ app.post("/parse", async (req, res) => {
 
     // Fallback: Convert English categories to Vietnamese if AI still returns English
     const categoryMap = {
+      'Income': 'Thu nhập',
+      'Salary': 'Thu nhập',
       'Food': 'Ăn uống',
       'Transport': 'Di chuyển',
       'Shopping': 'Mua sắm',
@@ -839,31 +848,47 @@ app.post('/insight', async (req, res) => {
 function buildPrompt() {
   return `IMPORTANT: You MUST respond in Vietnamese. Use Vietnamese category names ONLY.
 
-Trích xuất dữ liệu có cấu trúc từ văn bản hoặc hình ảnh hóa đơn.
-  
-Hướng dẫn:
-1. Trích xuất tên cửa hàng, tổng tiền và danh sách các mặt hàng với số tiền của chúng
-2. Với mỗi món hàng, xác định danh mục của nó
-3. Phân tích TẤT CẢ các món hàng để xác định danh mục CHÍNH cho toàn bộ giao dịch này:
-   - Nếu hầu hết các món là đồ ăn/đồ uống → category: "Ăn uống" (NOT "Food")
-   - Nếu các món liên quan đến vận chuyển/di chuyển → category: "Di chuyển" (NOT "Transport")
-   - Nếu là mua sắm/bán lẻ → category: "Mua sắm" (NOT "Shopping")
-   - Nếu là y tế/dược phẩm → category: "Sức khỏe" (NOT "Health")
-   - Nếu là giáo dục → category: "Giáo dục" (NOT "Education")
-   - Nếu là phim/game/giải trí → category: "Giải trí" (NOT "Entertainment")
-   - Nếu không chắc chắn → category: "Khác" (NOT "Other")
-4. Trả về JSON với merchant, total, category (cho toàn bộ giao dịch), và items array (mỗi món có description, amount, category)
+Trích xuất dữ liệu có cấu trúc từ văn bản.
 
-CRITICAL: The category field MUST be one of these EXACT Vietnamese strings:
+PHÂN LOẠI GIAO DỊCH - CỰC KỲ QUAN TRỌNG:
+- Nếu là HÓA ĐƠN MUA HÀNG/DỊCH VỤ (receipt, invoice) → type: "expense" (chi tiêu)
+- Nếu là LƯƠNG, THU NHẬP, TIỀN THƯỞNG, BONUS → type: "income" (thu nhập)
+- Nếu là TIỀN QUÀ/BIẾU TẶNG (gift money) → type: "income" (thu nhập)
+- Nếu là TIỀN CHO/NHẬN từ gia đình/bạn bè → type: "income" (thu nhập)
+- Nếu có từ khóa: "cho", "tặng", "biếu", "thưởng", "lương" → type: "income" (thu nhập)
+- Nếu có cụm từ: "mẹ cho", "bố cho", "bạn cho", "anh/chị cho" → type: "income" (thu nhập)
+- Nếu không rõ loại → type: "expense" (mặc định)
+
+Hướng dẫn trích xuất:
+1. XÁC ĐỊNH LOẠI GIAO DỊCH trước (income hay expense) dựa trên ngữ cảnh
+2. Trích xuất tên nguồn (cửa hàng/công ty/người gửi), tổng tiền và danh sách các mặt hàng/khoản mục
+3. Với mỗi món hàng/khoản mục, xác định giá tiền riêng và danh mục của nó
+4. Phân tích để xác định danh mục CHÍNH:
+   - Thu nhập từ lương/công việc/quà tặng → "Thu nhập" 
+   - Đồ ăn/đồ uống → "Ăn uống"
+   - Vận chuyển/di chuyển → "Di chuyển" 
+   - Mua sắm/bán lẻ → "Mua sắm"
+   - Y tế/dược phẩm → "Sức khỏe"
+   - Giáo dục → "Giáo dục"
+   - Phim/game/giải trí → "Giải trí"
+   - Khác → "Khác"
+
+5. Trả về JSON với merchant/source, total, type, category và items array với từng giá riêng
+
+CRITICAL: Category MUST be one of these Vietnamese strings:
+- "Thu nhập" (for income)
 - "Ăn uống"
-- "Di chuyển"
+- "Di chuyển" 
 - "Mua sắm"
 - "Giải trí"
 - "Sức khỏe"
 - "Giáo dục"
 - "Khác"
 
-DO NOT use English category names like "Food", "Transport", "Shopping", "Health", "Education", "Entertainment", or "Other".`;
+CRITICAL: Type MUST be either "income" or "expense".
+CRITICAL: All amounts MUST be positive numbers regardless of income/expense type.
+
+DO NOT use English category names or types.`;
 }
 
 const PORT = process.env.PORT || 3001;

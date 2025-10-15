@@ -8,6 +8,7 @@ import { StatusBar } from 'expo-status-bar';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import TransactionItem from '@/components/TransactionItem';
 
 // Import types mới
 import { StatisticData, SpendingSummary, Transaction } from '@/types';
@@ -32,30 +33,7 @@ const fetchInsightFromGemini = async (topCategory: SpendingSummary): Promise<str
 };
 
 
-const SpendingItem = ({ transaction }: { transaction: Transaction }) => {
-  // Lấy giá trị tuyệt đối để hiển thị số tiền chi tiêu
-  const displayAmount = typeof transaction.amount === 'number' ? transaction.amount : 0;
-
-  // Chỉ hiển thị giao dịch chi tiêu
-  if (transaction.type === 'income') return null;
-
-  return (
-    <View style={styles.spendingItemCard}>
-      <View style={styles.spendingItemLeft}>
-        <View style={styles.categoryIconPlaceholder} />
-        <View>
-          {/* Số tiền luôn hiển thị là số âm (chi tiêu) */}
-          <ThemedText style={styles.spendingAmount}>
-            {formatCurrency(displayAmount)} 
-          </ThemedText>
-          <ThemedText style={styles.spendingDescription}>
-            Nội Dung: {transaction.description}
-          </ThemedText>
-        </View>
-      </View>
-    </View>
-  );
-};
+// Removed SpendingItem - now using TransactionItem component
 
 // SpendingInsight component with API integration
 const SpendingInsight = ({ topSpending, totalSpent }: { topSpending: SpendingSummary; totalSpent: number }) => {
@@ -160,16 +138,23 @@ export default function StatisticScreen() {
     // Calculate top spending categories using UI transactions
     const expenseTransactions = uiTransactions.filter(t => t.type === 'expense');
     const categorySpending: Record<string, number> = {};
-    
+
+    // Exclude common income category names (normalized to lowercase)
+    const incomeCategorySet = new Set([
+      'thu nhập', 'thu nhap', 'income', 'lương', 'luong', 'salary'
+    ]);
+
     expenseTransactions.forEach(t => {
-      const category = t.category || 'Other';
+      const category = t.category || 'Khác';
+      const key = String(category).trim().toLowerCase();
+      if (incomeCategorySet.has(key)) return; // skip income categories like "Thu nhập"
       const amount = typeof t.amount === 'number' ? Math.abs(t.amount) : 0;
       categorySpending[category] = (categorySpending[category] || 0) + amount;
     });
 
     const topSpending = Object.entries(categorySpending)
       .map(([category, spent]) => ({
-        category: category || 'Unknown',
+        category: category || 'Khác',
         spent: typeof spent === 'number' ? spent : 0,
         percentage: stats.totalExpenses > 0 ? Math.round((spent / stats.totalExpenses) * 100) : 0
       }))
@@ -261,7 +246,14 @@ export default function StatisticScreen() {
                 <>
                   {displayedTransactions.map((transaction: Transaction) => (
                     <View key={transaction.id} style={{ marginBottom: Math.round(12 * scale) }}>
-                      <SpendingItem transaction={transaction} />
+                      <TransactionItem
+                        key={transaction.id}
+                        transaction={{
+                          ...transaction,
+                          amount: transaction.category !== 'Thu nhập' ? -Math.abs(transaction.amount || 0) : (transaction.amount || 0),
+                        }}
+                        colorScheme='light'
+                      />                    
                     </View>
                   ))}
                   {filteredTransactions.length > 3 && (
@@ -315,7 +307,7 @@ export default function StatisticScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFF',
+    backgroundColor: '#F0F3F8',
     paddingTop: Platform.OS === 'android' ? 30 : 0,
   },
   header: {
@@ -383,40 +375,7 @@ const styles = StyleSheet.create({
   tabTextUnselected: {
     color: '#666',
   },
-  spendingItemCard: {
-    backgroundColor: '#FFF',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  spendingItemLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  categoryIconPlaceholder: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#E0E0E0',
-    marginRight: 12,
-  },
-  spendingAmount: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#F60000',
-  },
-  spendingDescription: {
-    fontSize: 14,
-    color: '#666',
-  },
+
   viewAllButton: {
     padding: 8,
     alignSelf: 'center',
