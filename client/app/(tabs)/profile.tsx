@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,11 +10,14 @@ import {
   ActivityIndicator,
   Platform,
   ScrollView,
+  RefreshControl,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
 import AuthService from '@/lib/authService';
+import { StatusBar } from 'expo-status-bar';
+
 
 // Giả định các import này đã được cấu hình trong dự án của bạn
 import { ThemedText } from '@/components/themed-text';
@@ -61,7 +64,20 @@ export default function ProfileScreen() {
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const router = useRouter();
+
+  // Pull to refresh handler
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadProfile();
+    } catch (error) {
+      console.error('Error refreshing profile:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
 
 
   const isFocused = useIsFocused();
@@ -185,9 +201,21 @@ export default function ProfileScreen() {
 
   return (
     <ThemedView style={styles.container}> 
+      <StatusBar style="dark" backgroundColor="#F0F3F8" />
+
       <ThemedText style={styles.title}>Thông tin cá nhân</ThemedText>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#5F58C2']}
+            tintColor="#5F58C2"
+          />
+        }
+      >
         
         {/* Phần Avatar (chỉ hiển thị, không chỉnh sửa) */}
         <View style={styles.avatarCard}>
@@ -273,6 +301,7 @@ const styles = StyleSheet.create({
     color: '#333',
     paddingHorizontal: 20,
     marginBottom: 20,
+    paddingTop: 50
   },
   scrollContent: {
     paddingHorizontal: 20,
@@ -286,7 +315,6 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     flexDirection: 'column',
     alignItems: 'center', // Căn chỉnh theo chiều ngang (vertical axis)
-    elevation: 2,
     width: '40%',
     alignSelf: 'center',
   },

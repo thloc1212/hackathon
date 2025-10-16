@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -11,7 +11,8 @@ import {
   SafeAreaView,
   TextInput,
   ActivityIndicator,
-  Modal
+  Modal,
+  RefreshControl
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
@@ -31,12 +32,16 @@ export default function HomeScreen() {
   const colorScheme = 'light'; // Force light mode
   const colors = Colors[colorScheme];
   const [userName, setUserName] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
   
   // Dashboard state
   const [ocrText, setOcrText] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [structuredResponse, setStructuredResponse] = useState<GeminiTransactionResponse | null>(null);
   const [addingTransaction, setAddingTransaction] = useState(false);
+  const [selectedItems, setSelectedItems] = useState<number[]>([]);
+  const [editMode, setEditMode] = useState(false);
+  const [editingOcrText, setEditingOcrText] = useState('');
   
   // Database context for centralized data management
   const { 
@@ -47,6 +52,18 @@ export default function HomeScreen() {
     refreshData,
     addTransaction: addTransactionToDb
   } = useDatabase();
+
+  // Pull to refresh handler
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refreshData();
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshData]);
   
   // API hook for parsing receipts
   const { 
@@ -59,7 +76,9 @@ export default function HomeScreen() {
 
   useEffect(() => {
     const currentUser = AuthService.getCurrentUser();
-    if (currentUser?.email) {
+    if(currentUser?.name) {
+      setUserName(currentUser.name);
+    } else if (currentUser?.email) {
       // Extract name from email (before @ symbol)
       const name = currentUser.email.split('@')[0];
       setUserName(name.charAt(0).toUpperCase() + name.slice(1));
@@ -78,6 +97,10 @@ export default function HomeScreen() {
       if (response.success && response.data) {
         // Structure the response and show modal
         setStructuredResponse(response.data);
+        // Pre-select all items (all checkboxes ticked by default)
+        if (response.data.items && Array.isArray(response.data.items)) {
+          setSelectedItems(response.data.items.map((_, index) => index));
+        }
         setShowModal(true);
       } else {
         Alert.alert('Error', response.error || 'Failed to parse receipt');
@@ -89,54 +112,113 @@ export default function HomeScreen() {
   };
 
   const handleAddTransaction = async () => {
-    if (!structuredResponse || addingTransaction) return;
+    if (!structuredResponse || addingTransaction || selectedItems.length === 0) {
+      if (selectedItems.length === 0) {
+        Alert.alert('No Items Selected', 'Please select at least one item to add.');
+      }
+      return;
+    }
 
     setAddingTransaction(true);
     try {
-      // Convert Gemini response to transaction format
-      const transactionData = {
-        amount: Math.abs(structuredResponse.amount || structuredResponse.total || 0), // Ensure positive amount
-        category: structuredResponse.category || 'Other', // Use AI-determined category, fallback to 'Other'
-        description: structuredResponse.merchant || 'Transaction',
-        date: new Date().toISOString().split('T')[0], // Today's date in YYYY-MM-DD format
-        type: 'expense' as const, // Default to expense for receipts
-        merchant: structuredResponse.merchant,
-        items: structuredResponse.items?.map(item => ({
-          name: item.name || item.description || 'Item',
-          price: item.price || item.amount || 0,
-          quantity: item.quantity || 1,
-          category: item.category
-        })) || []
-      };
+      let successCount = 0;
+      let failureCount = 0;
 
-      console.log('Adding transaction:', transactionData);
-      const success = await addTransactionToDb(transactionData);
-      
-      if (success) {
-        Alert.alert('Success', 'Transaction added successfully');
+      // Add each selected item as a separate transaction
+      for (const itemIndex of selectedItems) {
+        const item = structuredResponse.items?.[itemIndex];
+        if (!item) continue;
+
+        const transactionData = {
+          amount: Math.abs(item.price || item.amount || 0), // Use item's amount
+          category: item.category || structuredResponse.category || 'Khác', // Use item's category, fallback to overall category
+          description: `${structuredResponse.merchant ? structuredResponse.merchant + ' - ' : ''}${item.name || item.description || 'Item'}`,
+          date: new Date().toISOString().split('T')[0], // Today's date in YYYY-MM-DD format
+          type: 'expense' as const, // Default to expense for receipts
+          merchant: structuredResponse.merchant,
+          items: [] // Each transaction is for a single item, no items array needed
+        };
+
+        console.log('Adding individual transaction:', transactionData);
+        const success = await addTransactionToDb(transactionData);
+        
+        if (success) {
+          successCount++;
+        } else {
+          failureCount++;
+        }
+      }
+
+      if (successCount > 0) {
+        Alert.alert(
+          'Success', 
+          `${successCount} transaction${successCount > 1 ? 's' : ''} added successfully${failureCount > 0 ? `, ${failureCount} failed` : ''}.`
+        );
         setShowModal(false);
         setOcrText('');
         setStructuredResponse(null);
-        // Refresh data will be called automatically by the DatabaseProvider
+        setSelectedItems([]);
       } else {
-        Alert.alert('Error', dbError || 'Failed to add transaction');
+        Alert.alert('Error', 'Failed to add any transactions');
       }
     } catch (error) {
-      console.error('Add transaction error:', error);
-      Alert.alert('Error', 'Failed to add transaction');
+      console.error('Add transactions error:', error);
+      Alert.alert('Error', 'Failed to add transactions');
     } finally {
       setAddingTransaction(false);
     }
   };
 
   const handleChangeTransaction = () => {
-    console.log('Changing transaction:', structuredResponse);
-    // TODO: Change transaction logic here
-    setShowModal(false);
+    setEditMode(true);
+    setEditingOcrText(ocrText);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingOcrText.trim()) {
+      Alert.alert('Error', 'Please enter some text to parse');
+      return;
+    }
+
+    try {
+      const response = await parseReceipt(editingOcrText);
+      
+      if (response.success && response.data) {
+        // Update the structured response with new data
+        setStructuredResponse(response.data);
+        // Pre-select all items again
+        if (response.data.items && Array.isArray(response.data.items)) {
+          setSelectedItems(response.data.items.map((_, index) => index));
+        }
+        setEditMode(false);
+        setOcrText(editingOcrText); // Update the main OCR text
+      } else {
+        Alert.alert('Error', response.error || 'Failed to parse edited text');
+      }
+    } catch (err: any) {
+      console.error('[client] Edit Gemini error:', err);
+      Alert.alert('Error', err?.message || 'Failed to parse edited text');
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditMode(false);
+    setEditingOcrText('');
   };
 
   const handleCloseModal = () => {
     setShowModal(false);
+    setSelectedItems([]);
+    setEditMode(false);
+    setEditingOcrText('');
+  };
+
+  const toggleItemSelection = (index: number) => {
+    setSelectedItems(prev => 
+      prev.includes(index) 
+        ? prev.filter(i => i !== index)
+        : [...prev, index]
+    );
   };
 
   // Connectivity checks
@@ -181,7 +263,18 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={[dashboardStyles.container, { backgroundColor: '#F0F3F8' }]}>
       <StatusBar style="dark" backgroundColor="#F0F3F8" />
-      <ScrollView style={dashboardStyles.scrollView} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={dashboardStyles.scrollView} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#5F58C2']}
+            tintColor="#5F58C2"
+          />
+        }
+      >
         {/* Welcome Section */}
         <View style={dashboardStyles.welcomeSection}>
           <Text style={[dashboardStyles.welcomeText, { color: colors.text }]}>
@@ -240,13 +333,12 @@ export default function HomeScreen() {
             Recent Transactions
           </Text>
           <View style={dashboardStyles.transactionsList}>
-            {Array.isArray(transactions) && transactions.map((transaction) => (
+            {Array.isArray(transactions) && transactions.slice(0, 10).map((transaction) => (
               <TransactionItem
                 key={transaction.id}
                 transaction={{
                   ...transaction,
-                  amount: transaction.type === 'expense' ? -Math.abs(transaction.amount || 0) : (transaction.amount || 0),
-                  date: transaction.date ? new Date(transaction.date).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB'),
+                  amount: transaction.category !== 'Thu nhập' ? -Math.abs(transaction.amount || 0) : (transaction.amount || 0),
                 }}
                 colorScheme='light'
               />
@@ -269,99 +361,174 @@ export default function HomeScreen() {
       >
         <View style={dashboardStyles.modalOverlay}>
           <View style={dashboardStyles.modalContainer}>
-            {/* Close Button */}
-            <Pressable style={dashboardStyles.closeButton} onPress={handleCloseModal}>
-              <Ionicons name="close" size={24} color="#666" />
-            </Pressable>
-
             {/* Modal Header */}
-            <Text style={dashboardStyles.modalTitle}>AI Analysis Result</Text>
+            <View style={dashboardStyles.modalHeader}>
+              <Text style={dashboardStyles.modalTitle}>Receipt Analysis</Text>
+              <Pressable onPress={handleCloseModal} style={dashboardStyles.closeButton}>
+                <Ionicons name="close" size={24} color="#666" />
+              </Pressable>
+            </View>
 
-            {/* Structured Response Display */}
+            {/* Content - Edit Mode or Display Mode */}
             <ScrollView style={dashboardStyles.modalContent} showsVerticalScrollIndicator={false}>
-              {structuredResponse && (
-                <View style={dashboardStyles.responseContainer}>
-                  <Text style={dashboardStyles.responseTitle}>Detected Information:</Text>
+              {editMode ? (
+                <View style={dashboardStyles.editContainer}>
+                  <Text style={dashboardStyles.editTitle}>Edit Receipt Text</Text>
+                  <Text style={dashboardStyles.editSubtitle}>
+                    Modify the text below and reprocess to get updated results:
+                  </Text>
                   
-                  {/* Merchant */}
-                  {structuredResponse.merchant && (
-                    <View style={dashboardStyles.responseItem}>
-                      <Text style={dashboardStyles.responseLabel}>Merchant:</Text>
-                      <Text style={dashboardStyles.responseValue}>{structuredResponse.merchant}</Text>
-                    </View>
-                  )}
-
-                  {/* Amount */}
-                  {(structuredResponse.amount || structuredResponse.total) && (
-                    <View style={dashboardStyles.responseItem}>
-                      <Text style={dashboardStyles.responseLabel}>Amount:</Text>
-                      <Text style={[dashboardStyles.responseValue, dashboardStyles.amountText]}>
-                        {formatCurrency(structuredResponse.amount || structuredResponse.total || 0)}
-                      </Text>
-                    </View>
-                  )}
-
-                  {/* Date */}
-                  {structuredResponse.date && (
-                    <View style={dashboardStyles.responseItem}>
-                      <Text style={dashboardStyles.responseLabel}>Date:</Text>
-                      <Text style={dashboardStyles.responseValue}>{structuredResponse.date}</Text>
-                    </View>
-                  )}
-
-                  {/* Category */}
-                  {structuredResponse.category && (
-                    <View style={dashboardStyles.responseItem}>
-                      <Text style={dashboardStyles.responseLabel}>Category:</Text>
-                      <Text style={dashboardStyles.responseValue}>{structuredResponse.category}</Text>
-                    </View>
-                  )}
-
-                  {/* Items (if receipt) */}
-                  {structuredResponse.items && Array.isArray(structuredResponse.items) && structuredResponse.items.length > 0 && (
-                    <View style={dashboardStyles.responseItem}>
-                      <Text style={dashboardStyles.responseLabel}>Items:</Text>
-                      {structuredResponse.items.map((item, index: number) => (
-                        <Text key={index} style={dashboardStyles.itemText}>
-                          • {item.name || item.description || 'Item'}: {formatCurrency(item.price || item.amount || 0)}
-                          {item.quantity && ` (x${item.quantity})`}
-                        </Text>
-                      ))}
-                    </View>
-                  )}
-
-                  {/* Raw response for debugging */}
-                  <View style={dashboardStyles.rawResponse}>
-                    <Text style={dashboardStyles.rawResponseTitle}>Raw Response:</Text>
-                    <Text style={dashboardStyles.rawResponseText}>
-                      {JSON.stringify(structuredResponse, null, 2)}
-                    </Text>
+                  <TextInput
+                    multiline
+                    value={editingOcrText}
+                    onChangeText={setEditingOcrText}
+                    placeholder="Enter receipt text..."
+                    placeholderTextColor="#64748b"
+                    style={dashboardStyles.editTextInput}
+                  />
+                  
+                  <View style={dashboardStyles.editActions}>
+                    <Pressable
+                      style={[dashboardStyles.editActionButton, dashboardStyles.cancelEditButton]}
+                      onPress={handleCancelEdit}
+                    >
+                      <Text style={dashboardStyles.cancelEditText}>Cancel</Text>
+                    </Pressable>
+                    
+                    <Pressable
+                      style={[dashboardStyles.editActionButton, dashboardStyles.saveEditButton, parseLoading && { opacity: 0.6 }]}
+                      onPress={handleSaveEdit}
+                      disabled={parseLoading}
+                    >
+                      {parseLoading ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <Text style={dashboardStyles.saveEditText}>Reprocess</Text>
+                      )}
+                    </Pressable>
                   </View>
                 </View>
+              ) : (
+                structuredResponse && (
+                  <View style={dashboardStyles.responseContainer}>
+                  {/* Merchant */}
+                  {structuredResponse.merchant && (
+                    <View style={dashboardStyles.merchantCard}>
+                      <View style={dashboardStyles.merchantIconContainer}>
+                        <Ionicons name="storefront" size={24} color="#5F58C2" />
+                      </View>
+                      <View>
+                        <Text style={dashboardStyles.merchantLabel}>Store</Text>
+                        <Text style={dashboardStyles.merchantName}>{structuredResponse.merchant}</Text>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Total Amount */}
+                  {(structuredResponse.amount || structuredResponse.total) && (
+                    <View style={dashboardStyles.totalCard}>
+                      <Text style={dashboardStyles.totalLabel}>Total Amount</Text>
+                      <Text style={dashboardStyles.totalAmount}>
+                        {formatCurrency(structuredResponse.amount || structuredResponse.total || 0)}
+                      </Text>
+                      <View style={dashboardStyles.categoryBadge}>
+                        <Text style={dashboardStyles.categoryText}>{structuredResponse.category}</Text>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Items List */}
+                  {structuredResponse.items && Array.isArray(structuredResponse.items) && structuredResponse.items.length > 0 && (
+                    <View style={dashboardStyles.itemsSection}>
+                      <Text style={dashboardStyles.itemsSectionTitle}>Items Found</Text>
+                      <View style={dashboardStyles.itemsHeader}>
+                        <Text style={dashboardStyles.itemsSubtitle}>Select which items you want to add:</Text>
+                        <Pressable 
+                          style={dashboardStyles.selectAllButton}
+                          onPress={() => {
+                            if (selectedItems.length === structuredResponse.items?.length) {
+                              setSelectedItems([]); // Deselect all
+                            } else {
+                              setSelectedItems(structuredResponse.items?.map((_, index) => index) || []); // Select all
+                            }
+                          }}
+                        >
+                          <Text style={dashboardStyles.selectAllText}>
+                            {selectedItems.length === structuredResponse.items?.length ? 'Deselect All' : 'Select All'}
+                          </Text>
+                        </Pressable>
+                      </View>
+                      
+                      <View style={dashboardStyles.itemsList}>
+                        {structuredResponse.items.map((item, index: number) => (
+                          <Pressable 
+                            key={index} 
+                            style={[
+                              dashboardStyles.itemCard,
+                              selectedItems.includes(index) && dashboardStyles.itemCardSelected
+                            ]}
+                            onPress={() => toggleItemSelection(index)}
+                          >
+                            <View style={dashboardStyles.checkbox}>
+                              {selectedItems.includes(index) ? (
+                                <Ionicons name="checkbox" size={24} color="#5F58C2" />
+                              ) : (
+                                <Ionicons name="square-outline" size={24} color="#cbd5e1" />
+                              )}
+                            </View>
+                            <View style={dashboardStyles.itemInfo}>
+                              <Text style={dashboardStyles.itemName}>
+                                {item.name || item.description || 'Item'}
+                              </Text>
+                              <Text style={dashboardStyles.itemPrice}>
+                                {formatCurrency(item.price || item.amount || 0)}
+                              </Text>
+                              {item.quantity && (
+                                <Text style={dashboardStyles.itemQuantity}>Qty: {item.quantity}</Text>
+                              )}
+                            </View>
+                            <View style={dashboardStyles.itemCategoryBadge}>
+                              <Text style={dashboardStyles.itemCategoryText}>{item.category}</Text>
+                            </View>
+                          </Pressable>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+                </View>
+                )
               )}
             </ScrollView>
 
-            {/* Action Buttons */}
-            <View style={dashboardStyles.modalActions}>
-              <Pressable
-                style={[dashboardStyles.actionButton, dashboardStyles.addButton, addingTransaction && { opacity: 0.6 }]}
-                onPress={handleAddTransaction}
-                disabled={addingTransaction}
-              >
-                {addingTransaction ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={dashboardStyles.actionButtonText}>Add Transaction</Text>
-                )}
-              </Pressable>
-              
-              <Pressable
-                style={[dashboardStyles.actionButton, dashboardStyles.changeButton]}
-                onPress={handleChangeTransaction}
-              >
-                <Text style={dashboardStyles.actionButtonText}>Change Details</Text>
-              </Pressable>
-            </View>
+            {/* Action Buttons - Only show when not in edit mode */}
+            {!editMode && (
+              <View style={dashboardStyles.modalActions}>
+                <Pressable
+                  style={[dashboardStyles.actionButton, dashboardStyles.editButton]}
+                  onPress={handleChangeTransaction}
+                >
+                  <Ionicons name="create-outline" size={18} color="#5F58C2" />
+                  <Text style={dashboardStyles.editButtonText}>Edit Input Text</Text>
+                </Pressable>
+                
+                <Pressable
+                  style={[dashboardStyles.actionButton, dashboardStyles.addButton, addingTransaction && { opacity: 0.6 }]}
+                  onPress={handleAddTransaction}
+                  disabled={addingTransaction || selectedItems.length === 0}
+                >
+                  {addingTransaction ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <>
+                      <Ionicons name="add" size={18} color="#fff" />
+                      <Text style={dashboardStyles.addButtonText}>
+                        Add {selectedItems.length} Item{selectedItems.length !== 1 ? 's' : ''}
+                      </Text>
+                    </>
+                  )}
+                </Pressable>
+              </View>
+            )}
           </View>
         </View>
       </Modal>
@@ -482,22 +649,27 @@ const dashboardStyles = StyleSheet.create({
   modalContainer: {
     backgroundColor: 'white',
     borderRadius: 20,
-    padding: 20,
     marginHorizontal: 20,
-    maxHeight: '80%',
+    height: '60%',
     width: '90%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 10,
     elevation: 5,
+    overflow: 'hidden',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+    backgroundColor: 'white',
   },
   closeButton: {
-    position: 'absolute',
-    top: 15,
-    right: 15,
-    zIndex: 1,
-    padding: 5,
+    padding: 4,
   },
   modalTitle: {
     fontSize: 20,
@@ -510,97 +682,218 @@ const dashboardStyles = StyleSheet.create({
   },
   modalContent: {
     flex: 1,
-    marginBottom: 20,
+    padding: 20,
   },
   responseContainer: {
-    gap: 12,
+    gap: 16,
+    paddingBottom: 35,
   },
-  responseTitle: {
-    fontSize: 16,
-    fontFamily: FontFamily.semiBold,
-    fontWeight: FontWeight.semiBold,
-    color: '#374151',
-    marginBottom: 8,
+  // Merchant Card
+  merchantCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
-  responseItem: {
-    backgroundColor: '#f9fafb',
-    padding: 12,
-    borderRadius: 8,
-    borderLeftWidth: 3,
-    borderLeftColor: '#5F58C2',
+  merchantIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(95, 88, 194, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
-  responseLabel: {
+  merchantLabel: {
     fontSize: 12,
     fontFamily: FontFamily.medium,
     fontWeight: FontWeight.medium,
-    color: '#6b7280',
+    color: '#64748b',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  responseValue: {
+  merchantName: {
     fontSize: 16,
-    fontFamily: FontFamily.regular,
-    fontWeight: FontWeight.regular,
-    color: '#1f2937',
-    marginTop: 4,
+    fontFamily: FontFamily.semiBold,
+    fontWeight: FontWeight.semiBold,
+    color: '#1e293b',
+    marginTop: 2,
   },
-  amountText: {
-    fontSize: 18,
+  // Total Card
+  totalCard: {
+    backgroundColor: 'rgba(95, 88, 194, 0.05)',
+    padding: 20,
+    borderRadius: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(95, 88, 194, 0.2)',
+  },
+  totalLabel: {
+    fontSize: 14,
+    fontFamily: FontFamily.medium,
+    fontWeight: FontWeight.medium,
+    color: '#64748b',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  totalAmount: {
+    fontSize: 28,
     fontFamily: FontFamily.bold,
     fontWeight: FontWeight.bold,
     color: '#5F58C2',
+    marginTop: 4,
+    marginBottom: 12,
   },
-  itemText: {
+  categoryBadge: {
+    backgroundColor: 'rgba(95, 88, 194, 0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(95, 88, 194, 0.3)',
+  },
+  categoryText: {
+    fontSize: 12,
+    fontFamily: FontFamily.medium,
+    fontWeight: FontWeight.medium,
+    color: '#5F58C2',
+  },
+  // Items Section
+  itemsSection: {
+    marginTop: 8,
+  },
+  itemsSectionTitle: {
+    fontSize: 18,
+    fontFamily: FontFamily.bold,
+    fontWeight: FontWeight.bold,
+    color: '#1e293b',
+    marginBottom: 4,
+  },
+  itemsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  itemsSubtitle: {
     fontSize: 14,
     fontFamily: FontFamily.regular,
     fontWeight: FontWeight.regular,
-    color: '#374151',
-    marginTop: 2,
-    marginLeft: 8,
+    color: '#64748b',
+    flex: 1,
   },
-  rawResponse: {
-    marginTop: 16,
-    padding: 12,
-    backgroundColor: '#f3f4f6',
-    borderRadius: 8,
+  selectAllButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: 'rgba(95, 88, 194, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(95, 88, 194, 0.3)',
   },
-  rawResponseTitle: {
+  selectAllText: {
     fontSize: 12,
+    fontFamily: FontFamily.medium,
+    fontWeight: FontWeight.medium,
+    color: '#5F58C2',
+  },
+  itemsList: {
+    gap: 8,
+  },
+  itemCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  itemCardSelected: {
+    borderColor: '#5F58C2',
+    backgroundColor: 'rgba(95, 88, 194, 0.02)',
+  },
+  checkbox: {
+    marginRight: 12,
+  },
+  itemInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  itemName: {
+    fontSize: 16,
     fontFamily: FontFamily.semiBold,
     fontWeight: FontWeight.semiBold,
-    color: '#6b7280',
-    marginBottom: 8,
+    color: '#1e293b',
+    marginBottom: 4,
   },
-  rawResponseText: {
+  itemPrice: {
+    fontSize: 14,
+    fontFamily: FontFamily.bold,
+    fontWeight: FontWeight.bold,
+    color: '#059669',
+  },
+  itemQuantity: {
+    fontSize: 12,
+    fontFamily: FontFamily.regular,
+    fontWeight: FontWeight.regular,
+    color: '#64748b',
+    marginTop: 2,
+  },
+  itemCategoryBadge: {
+    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  itemCategoryText: {
     fontSize: 10,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    color: '#374151',
-    lineHeight: 14,
+    fontFamily: FontFamily.medium,
+    fontWeight: FontWeight.medium,
+    color: '#475569',
   },
+  // Modal Actions
   modalActions: {
     flexDirection: 'row',
+    padding: 20,
     gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+    backgroundColor: 'white',
   },
   actionButton: {
     flex: 1,
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  editButton: {
+    backgroundColor: 'rgba(95, 88, 194, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(95, 88, 194, 0.3)',
   },
   addButton: {
-    backgroundColor: '#10b981',
+    backgroundColor: '#5F58C2',
   },
-  changeButton: {
-    backgroundColor: '#f59e0b',
+  editButtonText: {
+    color: '#5F58C2',
+    fontSize: 14,
+    fontFamily: FontFamily.semiBold,
+    fontWeight: FontWeight.semiBold,
   },
-  actionButtonText: {
+  addButtonText: {
     color: 'white',
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: FontFamily.semiBold,
     fontWeight: FontWeight.semiBold,
   },
@@ -612,5 +905,68 @@ const dashboardStyles = StyleSheet.create({
     opacity: 0.6,
     marginTop: 20,
     marginBottom: 20,
+  },
+  // Edit Mode Styles
+  editContainer: {
+    gap: 16,
+  },
+  editTitle: {
+    fontSize: 18,
+    fontFamily: FontFamily.bold,
+    fontWeight: FontWeight.bold,
+    color: '#1e293b',
+    textAlign: 'center',
+  },
+  editSubtitle: {
+    fontSize: 14,
+    fontFamily: FontFamily.regular,
+    fontWeight: FontWeight.regular,
+    color: '#64748b',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  editTextInput: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 12,
+    padding: 16,
+    minHeight: 120,
+    textAlignVertical: 'top',
+    fontSize: 14,
+    fontFamily: FontFamily.regular,
+    fontWeight: FontWeight.regular,
+    backgroundColor: '#f9fafb',
+    color: '#1f2937',
+  },
+  editActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  editActionButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  cancelEditButton: {
+    backgroundColor: '#f3f4f6',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+  },
+  saveEditButton: {
+    backgroundColor: '#5F58C2',
+  },
+  cancelEditText: {
+    color: '#374151',
+    fontSize: 14,
+    fontFamily: FontFamily.medium,
+    fontWeight: FontWeight.medium,
+  },
+  saveEditText: {
+    color: 'white',
+    fontSize: 14,
+    fontFamily: FontFamily.medium,
+    fontWeight: FontWeight.medium,
   },
 });

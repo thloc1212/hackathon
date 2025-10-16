@@ -11,7 +11,7 @@ export const formatCurrency = (amount: number | undefined | null): string => {
   if (amount === undefined || amount === null || isNaN(amount)) {
     return '0đ';
   }
-  return Math.abs(amount).toLocaleString('vi-VN') + 'đ';
+  return amount.toLocaleString('vi-VN') + 'đ';
 };
 
 /**

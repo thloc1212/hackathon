@@ -47,8 +47,8 @@ const receiptSchema = {
             description: "The name of the item.",
           },
           quantity: {
-            type: Type.INTEGER,
-            description: "The quantity of the item purchased.",
+            type: Type.NUMBER,
+            description: "The quantity of the item purchased. Can be a decimal number (e.g., 1.5 kg). Default to 1 if not specified.",
           },
           price: {
             type: Type.NUMBER,
@@ -68,33 +68,36 @@ const receiptSchema = {
             ],
           },
         },
-        required: ["name", "quantity", "price"],
+        required: ["name", "price"],
       },
     },
   },
-  required: ["merchant", "date", "total", "category", "items"],
+  required: ["total", "items"],
 };
 
-// Add type for consistency with camera.tsx expected shape
-export interface ReceiptInfo {
-  merchant: string;
-  date: string;
-  total: number;
-  category?: string;
-  items: Array<{
-    name: string;
-    price: number;
-    quantity?: number;
-    category?: string;
-  }>;
-}
+// Import the ReceiptInfo type from the centralized types
+import { ReceiptInfo } from '@/types';
 
 export async function parseReceipt(base64Image: string, mimeType: string): Promise<ReceiptInfo> {
   try {
+    console.log('[geminiService] Processing image with MIME type:', mimeType);
+    console.log('[geminiService] Base64 data length:', base64Image.length);
+    
+    // Ensure MIME type is supported by Gemini API
+    let processedMimeType = mimeType;
+    if (mimeType === 'image/heic' || mimeType === 'image/heif') {
+      // Gemini API supports HEIC, but let's log it for debugging
+      console.log('[geminiService] Processing HEIC/HEIF image from iOS');
+    } else if (!['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'].includes(mimeType)) {
+      // Default to JPEG for unknown types
+      console.warn('[geminiService] Unknown MIME type, defaulting to image/jpeg:', mimeType);
+      processedMimeType = 'image/jpeg';
+    }
+    
     const imagePart = {
       inlineData: {
         data: base64Image,
-        mimeType: mimeType,
+        mimeType: processedMimeType,
       },
     };
 
@@ -102,8 +105,8 @@ export async function parseReceipt(base64Image: string, mimeType: string): Promi
       text: `IMPORTANT: You MUST respond in Vietnamese. Use Vietnamese category names ONLY.
 
 Phân tích hình ảnh hóa đơn và trích xuất thông tin:
-1. Tên cửa hàng/doanh nghiệp, ngày tháng, tổng tiền
-2. Danh sách các mặt hàng đã mua với tên, số lượng và giá
+1. Tên cửa hàng/doanh nghiệp, ngày tháng
+2. Danh sách các mặt hàng đã mua với tên, số lượng và giá.
 3. Với mỗi món hàng, xác định danh mục của nó
 4. Xác định danh mục CHÍNH cho toàn bộ giao dịch:
    - Nếu hầu hết các món là đồ ăn/đồ uống → category: "Ăn uống" (NOT "Food")
@@ -122,6 +125,8 @@ CRITICAL: The category field MUST be one of these EXACT Vietnamese strings:
 - "Sức khỏe"
 - "Giáo dục"
 - "Khác"
+CRITICAL:All the items MUST have a price field as a number. If the price is missing or not a number, GUESS the price based on the item name using your knowledge.
+CRITICAL: The total field MUST be a number and MUST match the sum of all item prices. If the total is missing or not a number, CALCULATE it as the sum of all item prices.
 
 DO NOT use English category names like "Food", "Transport", "Shopping", "Health", "Education", "Entertainment", or "Other".`,
     };
@@ -136,6 +141,7 @@ DO NOT use English category names like "Food", "Transport", "Shopping", "Health"
     });
 
     const jsonText = response.text?.trim() || '';
+    console.log("[geminiService] Raw response text:", jsonText);
     if (!jsonText) {
       throw new Error("Empty response from Gemini API");
     }
@@ -172,18 +178,40 @@ DO NOT use English category names like "Food", "Transport", "Shopping", "Health"
     
     // Basic validation to ensure the data shape matches the ReceiptInfo interface
     if (
-        typeof parsedData.merchant === 'string' &&
-        typeof parsedData.date === 'string' &&
         typeof parsedData.total === 'number' &&
-        Array.isArray(parsedData.items)
+        Array.isArray(parsedData.items) &&
+        parsedData.items.every((item: any) => 
+          typeof item.name === 'string' && 
+          typeof item.price === 'number'
+        )
     ) {
-        return parsedData as ReceiptInfo;
+        // Ensure optional fields have proper types if they exist
+        const result: ReceiptInfo = {
+          total: parsedData.total,
+          items: parsedData.items,
+          merchant: typeof parsedData.merchant === 'string' ? parsedData.merchant : undefined,
+          date: typeof parsedData.date === 'string' ? parsedData.date : undefined,
+          category: typeof parsedData.category === 'string' ? parsedData.category : undefined,
+        };
+        return result;
     } else {
         throw new Error("Parsed data does not match the expected receipt structure.");
     }
 
   } catch (error) {
     console.error("Error parsing receipt with Gemini API:", error);
-    throw new Error("Failed to analyze the receipt. Please try another image.");
+    
+    // Provide more specific error messages for different scenarios
+    if (error instanceof Error) {
+      if (error.message.includes('quota') || error.message.includes('limit')) {
+        throw new Error("API quota exceeded. Please try again later.");
+      } else if (error.message.includes('image') || error.message.includes('format')) {
+        throw new Error("Image format not supported. Please try taking a new photo or selecting a different image.");
+      } else if (error.message.includes('network') || error.message.includes('fetch')) {
+        throw new Error("Network error. Please check your connection and try again.");
+      }
+    }
+    
+    throw new Error("Failed to analyze the receipt. Please try taking a clearer photo or try again.");
   }
 }
