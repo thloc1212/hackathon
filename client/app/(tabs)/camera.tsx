@@ -97,14 +97,26 @@ export default function CameraScreen() {
   const takePicture = async () => {
     if (cameraRef.current) {
       try {
-        const photo = await cameraRef.current.takePictureAsync();
+        const photo = await cameraRef.current.takePictureAsync({
+          quality: 0.8,
+          base64: false, // We'll read base64 separately for better control
+          skipProcessing: false,
+          // For iOS, ensure we get a compatible format
+          ...(Platform.OS === 'ios' && {
+            exif: false, // Reduce file size and potential processing issues
+          }),
+        });
+        
         if (photo?.uri) {
+          console.log('Photo captured successfully:', photo.uri);
           setCapturedImage(photo.uri);
           processImage(photo.uri);
+        } else {
+          throw new Error('No image URI received from camera');
         }
       } catch (error) {
         console.error('Error taking picture:', error);
-        showCrossPlatformAlert('Error', 'Failed to take picture');
+        showCrossPlatformAlert('Error', 'Failed to capture photo. Please try again.');
       }
     }
   };
@@ -116,6 +128,11 @@ export default function CameraScreen() {
         allowsEditing: true,
         aspect: [4, 3],
         quality: 0.8,
+        // Force JPEG format for better compatibility
+        ...(Platform.OS === 'ios' && {
+          allowsMultipleSelection: false,
+          selectionLimit: 1,
+        }),
       });
 
       if (!result.canceled && result.assets[0]) {
@@ -124,20 +141,23 @@ export default function CameraScreen() {
       }
     } catch (error) {
       console.error('Error picking image:', error);
-      showCrossPlatformAlert('Error', 'Failed to pick image');
+      showCrossPlatformAlert('Error', 'Failed to pick image from library');
     }
   };
 
   const processImage = async (imageUri: string) => {
     setIsProcessing(true);
     try {
+      console.log('Processing image URI:', imageUri);
+      console.log('Platform:', Platform.OS);
+      
       // Read file as base64. FileSystem.readAsStringAsync works with file:// URIs.
       let base64: string | null = null;
+      
       try {
-        base64 = await FileSystem.readAsStringAsync(imageUri, { encoding: 'base64' as any });
-      } catch (fsErr) {
-        // On Android content:// URIs readAsStringAsync may fail. Fallback to fetch -> blob -> base64
-        try {
+        // For iOS, handle different URI schemes properly
+        if (Platform.OS === 'ios' && imageUri.startsWith('ph://')) {
+          console.log('iOS Photos URI detected, using fetch method');
           const resp = await fetch(imageUri);
           const blob = await resp.blob();
           const arrayBuffer = await blob.arrayBuffer();
@@ -147,9 +167,29 @@ export default function CameraScreen() {
             binary += String.fromCharCode(bytes[i]);
           }
           base64 = btoa(binary);
+        } else {
+          // Standard file:// URI handling
+          base64 = await FileSystem.readAsStringAsync(imageUri, { encoding: 'base64' as any });
+        }
+      } catch (fsErr) {
+        console.log('FileSystem read failed, trying fetch method:', fsErr);
+        // Fallback: Use fetch for content:// URIs (Android) or other URI schemes
+        try {
+          const resp = await fetch(imageUri);
+          if (!resp.ok) {
+            throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+          }
+          const blob = await resp.blob();
+          const arrayBuffer = await blob.arrayBuffer();
+          const bytes = new Uint8Array(arrayBuffer);
+          let binary = '';
+          for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          base64 = btoa(binary);
         } catch (fallbackErr) {
-          console.error('Failed to read image as base64', fsErr, fallbackErr);
-          throw new Error('Unable to read image data');
+          console.error('Both FileSystem and fetch methods failed:', fsErr, fallbackErr);
+          throw new Error('Unable to read image data. Please try taking a new photo.');
         }
       }
 
@@ -157,21 +197,37 @@ export default function CameraScreen() {
         throw new Error('Failed to read image as base64');
       }
 
-      // Guess mime type from extension
+      console.log('Base64 length:', base64.length);
+
+      // Improved mime type detection for iOS
       const guessMimeType = (uri: string) => {
+        // Check for explicit format parameters in iOS URIs
+        if (uri.includes('ext=HEIC') || uri.includes('ext=heic')) {
+          return 'image/heic';
+        }
+        if (uri.includes('ext=PNG') || uri.includes('ext=png')) {
+          return 'image/png';
+        }
+        
+        // Check file extension
         const m = uri.match(/\.(\w+)(\?.*)?$/);
         const ext = m ? m[1].toLowerCase() : '';
         if (ext === 'png') return 'image/png';
         if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
-        if (ext === 'heic') return 'image/heic';
+        if (ext === 'heic' || ext === 'heif') return 'image/heic';
+        
+        // Default to JPEG for compatibility
         return 'image/jpeg';
       };
 
       const mimeType = guessMimeType(imageUri);
+      console.log('Detected MIME type:', mimeType);
 
       // Use local parseReceipt instead of remote endpoint
       const { parseReceipt } = await import('@/services/geminiService');
+      console.log('Starting Gemini API call...');
       const data = await parseReceipt(base64, mimeType);
+      console.log('Gemini API response received:', data);
 
       // Data from parseReceipt already matches ReceiptInfo shape
       const mapped: ReceiptInfo = {
@@ -190,7 +246,19 @@ export default function CameraScreen() {
       setShowPanel(true);
     } catch (error) {
       console.error('Error processing image:', error);
-      showCrossPlatformAlert('Error', 'Failed to process receipt');
+      
+      let errorMessage = 'Failed to process receipt';
+      if (error instanceof Error) {
+        // Use the more specific error message from geminiService
+        errorMessage = error.message;
+      }
+      
+      // Add platform-specific guidance
+      if (Platform.OS === 'ios') {
+        errorMessage += '\n\nFor iOS: Try taking a new photo directly with the camera instead of selecting from the photo library.';
+      }
+      
+      showCrossPlatformAlert('Processing Error', errorMessage);
     } finally {
       setIsProcessing(false);
     }

@@ -76,7 +76,9 @@ export default function HomeScreen() {
 
   useEffect(() => {
     const currentUser = AuthService.getCurrentUser();
-    if (currentUser?.email) {
+    if(currentUser?.name) {
+      setUserName(currentUser.name);
+    } else if (currentUser?.email) {
       // Extract name from email (before @ symbol)
       const name = currentUser.email.split('@')[0];
       setUserName(name.charAt(0).toUpperCase() + name.slice(1));
@@ -648,7 +650,7 @@ const dashboardStyles = StyleSheet.create({
     backgroundColor: 'white',
     borderRadius: 20,
     marginHorizontal: 20,
-    maxHeight: '85%',
+    height: '60%',
     width: '90%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -684,6 +686,7 @@ const dashboardStyles = StyleSheet.create({
   },
   responseContainer: {
     gap: 16,
+    paddingBottom: 35,
   },
   // Merchant Card
   merchantCard: {

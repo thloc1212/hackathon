@@ -80,10 +80,24 @@ import { ReceiptInfo } from '@/types';
 
 export async function parseReceipt(base64Image: string, mimeType: string): Promise<ReceiptInfo> {
   try {
+    console.log('[geminiService] Processing image with MIME type:', mimeType);
+    console.log('[geminiService] Base64 data length:', base64Image.length);
+    
+    // Ensure MIME type is supported by Gemini API
+    let processedMimeType = mimeType;
+    if (mimeType === 'image/heic' || mimeType === 'image/heif') {
+      // Gemini API supports HEIC, but let's log it for debugging
+      console.log('[geminiService] Processing HEIC/HEIF image from iOS');
+    } else if (!['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'].includes(mimeType)) {
+      // Default to JPEG for unknown types
+      console.warn('[geminiService] Unknown MIME type, defaulting to image/jpeg:', mimeType);
+      processedMimeType = 'image/jpeg';
+    }
+    
     const imagePart = {
       inlineData: {
         data: base64Image,
-        mimeType: mimeType,
+        mimeType: processedMimeType,
       },
     };
 
@@ -186,6 +200,18 @@ DO NOT use English category names like "Food", "Transport", "Shopping", "Health"
 
   } catch (error) {
     console.error("Error parsing receipt with Gemini API:", error);
-    throw new Error("Failed to analyze the receipt. Please try another image.");
+    
+    // Provide more specific error messages for different scenarios
+    if (error instanceof Error) {
+      if (error.message.includes('quota') || error.message.includes('limit')) {
+        throw new Error("API quota exceeded. Please try again later.");
+      } else if (error.message.includes('image') || error.message.includes('format')) {
+        throw new Error("Image format not supported. Please try taking a new photo or selecting a different image.");
+      } else if (error.message.includes('network') || error.message.includes('fetch')) {
+        throw new Error("Network error. Please check your connection and try again.");
+      }
+    }
+    
+    throw new Error("Failed to analyze the receipt. Please try taking a clearer photo or try again.");
   }
 }
