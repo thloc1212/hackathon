@@ -97,13 +97,21 @@ export default function CameraScreen() {
   const takePicture = async () => {
     if (cameraRef.current) {
       try {
+        // Add a small delay to ensure camera is ready (important for Android)
+        // Note: takePictureAsync is NOT deprecated - it's the correct method to use
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
         const photo = await cameraRef.current.takePictureAsync({
           quality: 0.8,
           base64: false, // We'll read base64 separately for better control
           skipProcessing: false,
-          // For iOS, ensure we get a compatible format
+          // Platform-specific optimizations for better compatibility
           ...(Platform.OS === 'ios' && {
             exif: false, // Reduce file size and potential processing issues
+          }),
+          ...(Platform.OS === 'android' && {
+            exif: true, // Keep exif data on Android for proper orientation
+            quality: 0.7, // Slightly lower quality for better performance
           }),
         });
         
@@ -116,7 +124,33 @@ export default function CameraScreen() {
         }
       } catch (error) {
         console.error('Error taking picture:', error);
-        showCrossPlatformAlert('Error', 'Failed to capture photo. Please try again.');
+        
+        // Provide more helpful error messages and suggest alternatives
+        let errorMessage = 'Failed to capture photo.';
+        let buttons = [{ text: 'Try Again' }];
+        
+        if (error instanceof Error) {
+          if (error.message.includes('Camera not ready') || error.message.includes('not available')) {
+            errorMessage = 'Camera is not ready. Please wait a moment and try again.';
+          } else if (error.message.includes('permission')) {
+            errorMessage = 'Camera permission is required to take photos.';
+          } else if (Platform.OS === 'android' && (
+            error.message.includes('IllegalArgumentException') || 
+            error.message.includes('CameraAccessException') ||
+            error.message.toLowerCase().includes('deprecated')
+          )) {
+            errorMessage = 'Camera compatibility issue detected. Would you like to use photo library instead?';
+            // Handle this error case separately for better UX
+            showCrossPlatformAlert('Camera Error', errorMessage, [
+              { text: 'Use Photo Library', onPress: () => pickImage() },
+              { text: 'Try Again' }
+            ]);
+            return; // Early return to avoid the generic alert below
+          }
+        }
+        
+        // Default error handling for other cases
+        showCrossPlatformAlert('Camera Error', errorMessage);
       }
     }
   };
@@ -151,7 +185,8 @@ export default function CameraScreen() {
       console.log('Processing image URI:', imageUri);
       console.log('Platform:', Platform.OS);
       
-      // Read file as base64. FileSystem.readAsStringAsync works with file:// URIs.
+      // Read file as base64 using modern FileSystem API (File.base64() method)
+      // Falls back to legacy API and then fetch method if needed
       let base64: string | null = null;
       
       try {
@@ -168,28 +203,36 @@ export default function CameraScreen() {
           }
           base64 = btoa(binary);
         } else {
-          // Standard file:// URI handling
-          base64 = await FileSystem.readAsStringAsync(imageUri, { encoding: 'base64' as any });
+          // Standard file:// URI handling using modern FileSystem API
+          const file = new FileSystem.File(imageUri);
+          base64 = await file.base64();
         }
       } catch (fsErr) {
-        console.log('FileSystem read failed, trying fetch method:', fsErr);
-        // Fallback: Use fetch for content:// URIs (Android) or other URI schemes
+        console.log('Modern FileSystem API failed, trying legacy method:', fsErr);
+        // Fallback 1: Try legacy FileSystem API
         try {
-          const resp = await fetch(imageUri);
-          if (!resp.ok) {
-            throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+          const LegacyFileSystem = await import('expo-file-system/legacy');
+          base64 = await LegacyFileSystem.readAsStringAsync(imageUri, { encoding: 'base64' });
+        } catch (legacyErr) {
+          console.log('Legacy FileSystem API also failed, trying fetch method:', legacyErr);
+          // Fallback 2: Use fetch for content:// URIs (Android) or other URI schemes
+          try {
+            const resp = await fetch(imageUri);
+            if (!resp.ok) {
+              throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+            }
+            const blob = await resp.blob();
+            const arrayBuffer = await blob.arrayBuffer();
+            const bytes = new Uint8Array(arrayBuffer);
+            let binary = '';
+            for (let i = 0; i < bytes.byteLength; i++) {
+              binary += String.fromCharCode(bytes[i]);
+            }
+            base64 = btoa(binary);
+          } catch (fallbackErr) {
+            console.error('All FileSystem methods failed:', fsErr, legacyErr, fallbackErr);
+            throw new Error('Unable to read image data. Please try taking a new photo.');
           }
-          const blob = await resp.blob();
-          const arrayBuffer = await blob.arrayBuffer();
-          const bytes = new Uint8Array(arrayBuffer);
-          let binary = '';
-          for (let i = 0; i < bytes.byteLength; i++) {
-            binary += String.fromCharCode(bytes[i]);
-          }
-          base64 = btoa(binary);
-        } catch (fallbackErr) {
-          console.error('Both FileSystem and fetch methods failed:', fsErr, fallbackErr);
-          throw new Error('Unable to read image data. Please try taking a new photo.');
         }
       }
 
@@ -539,7 +582,12 @@ export default function CameraScreen() {
   return (
     <View style={styles.container}>
       {isFocused && (
-        <CameraView ref={cameraRef} style={styles.camera} facing={facing}>
+        <CameraView 
+          ref={cameraRef} 
+          style={styles.camera} 
+          facing={facing}
+          onCameraReady={() => console.log('Camera is ready')}
+        >
           <View style={styles.cameraControls}>
             <TouchableOpacity style={styles.flipButton} onPress={toggleCameraFacing}>
               <Ionicons name="camera-reverse" size={24} color="white" />
