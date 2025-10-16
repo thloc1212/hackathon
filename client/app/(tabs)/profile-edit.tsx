@@ -280,7 +280,6 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     flexDirection: 'column',
     alignItems: 'center',
-    elevation: 2,
     width: '40%',
     alignSelf: 'center',
   },

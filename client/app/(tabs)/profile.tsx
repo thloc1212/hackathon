@@ -315,7 +315,6 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     flexDirection: 'column',
     alignItems: 'center', // Căn chỉnh theo chiều ngang (vertical axis)
-    elevation: 2,
     width: '40%',
     alignSelf: 'center',
   },
