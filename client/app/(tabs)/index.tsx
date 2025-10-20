@@ -30,12 +30,11 @@ export default function HomePage() {
   
   // Form state
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [otp, setOtp] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
   const [signUpEmail, setSignUpEmail] = useState('');
   const [signUpName, setSignUpName] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
-  const [signUpPassword, setSignUpPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   
   // Error state
   const [signInError, setSignInError] = useState('');
@@ -57,6 +56,9 @@ export default function HomePage() {
 
   const handleCloseSignInModal = () => {
     setSignInError('');
+    setEmail('');
+    setOtp('');
+    setOtpSent(false);
     setShowSignInModal(false);
   };
 
@@ -65,8 +67,6 @@ export default function HomePage() {
     setSignUpName('');
     setSignUpEmail('');
     setDateOfBirth('');
-    setSignUpPassword('');
-    setConfirmPassword('');
     setShowSignUpModal(false);
   };
 
@@ -84,22 +84,38 @@ export default function HomePage() {
     setIsSignInLoading(true);
     
     try {
-      if (!email || !password) {
-        setSignInError('Please fill in all fields');
-        setIsSignInLoading(false);
-        return;
-      }
+      if (!otpSent) {
+        // Step 1: Request OTP
+        if (!email) {
+          setSignInError('Please enter your email');
+          setIsSignInLoading(false);
+          return;
+        }
 
-  const result = await AuthService.signin(email, password);
-      
-  // Clear form and close modal; RootLayout will detect auth change and show Tabs
-      setEmail('');
-      setPassword('');
-      setSignInError('');
-      setShowSignInModal(false);
+        await AuthService.requestOTP(email);
+        setOtpSent(true);
+        setSignInError('');
+        
+      } else {
+        // Step 2: Verify OTP and login
+        if (!otp) {
+          setSignInError('Please enter the OTP code');
+          setIsSignInLoading(false);
+          return;
+        }
+
+        await AuthService.verifyOTP(email, otp);
+        
+        // Clear form and close modal; RootLayout will detect auth change and show Tabs
+        setEmail('');
+        setOtp('');
+        setOtpSent(false);
+        setSignInError('');
+        setShowSignInModal(false);
+      }
       
     } catch (error) {
-      setSignInError((error as Error).message || 'Failed to sign in');
+      setSignInError((error as Error).message || 'Authentication failed');
     } finally {
       setIsSignInLoading(false);
     }
@@ -111,7 +127,7 @@ export default function HomePage() {
     
     try {
       // Validate required fields
-      if (!signUpName || !signUpEmail || !signUpPassword || !confirmPassword || !dateOfBirth) {
+      if (!signUpName || !signUpEmail || !dateOfBirth) {
         setSignUpError('Please fill in all fields');
         setIsSignUpLoading(false);
         return;
@@ -140,38 +156,16 @@ export default function HomePage() {
         return;
       }
 
-      // Validate password match
-      if (signUpPassword !== confirmPassword) {
-        setSignUpError('Passwords do not match');
-        setIsSignUpLoading(false);
-        return;
-      }
+      const result = await AuthService.signup(signUpName, signUpEmail, dateOfBirth);
 
-      // Validate password length
-      if (signUpPassword.length < 6) {
-        setSignUpError('Password must be at least 6 characters long');
-        setIsSignUpLoading(false);
-        return;
-      }
-
-      const result = await AuthService.signup(signUpName, signUpEmail, signUpPassword, dateOfBirth);
-
-      // Try to auto sign in after signup so user immediately sees tabs/home
-      try {
-        await AuthService.signin(signUpEmail, signUpPassword);
-        // success: RootLayout will react to auth change and navigate to home
-      } catch (err) {
-        // if auto sign-in fails, fall back to showing registration success so user can sign in manually
-        setRegisteredEmail(signUpEmail);
-        setShowRegistrationSuccess(true);
-      }
+      // Show success message and redirect to login
+      setRegisteredEmail(signUpEmail);
+      setShowRegistrationSuccess(true);
 
       // Clear form and close modal
       setSignUpName('');
       setSignUpEmail('');
       setDateOfBirth('');
-      setSignUpPassword('');
-      setConfirmPassword('');
       setSignUpError('');
       setShowSignUpModal(false);
       
@@ -308,35 +302,65 @@ export default function HomePage() {
                 <View style={styles.signInCard}>
                   <Text style={styles.signInTitle}>Sign in</Text>
                   
-                  {/* Email Input */}
-                  <View style={styles.inputContainer}>
-                    <Text style={styles.inputLabel}>Email</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      value={email}
-                      onChangeText={setEmail}
-                      placeholder=""
-                      keyboardType="email-address"
-                      autoCapitalize="none"
-                    />
-                  </View>
+                  {!otpSent ? (
+                    <>
+                      {/* Email Input */}
+                      <View style={styles.inputContainer}>
+                        <Text style={styles.inputLabel}>Email</Text>
+                        <TextInput
+                          style={styles.textInput}
+                          value={email}
+                          onChangeText={setEmail}
+                          placeholder="Enter your email"
+                          placeholderTextColor="#9CA3AF"
+                          keyboardType="email-address"
+                          autoCapitalize="none"
+                        />
+                      </View>
 
-                  {/* Password Input */}
-                  <View style={styles.inputContainer}>
-                    <Text style={styles.inputLabel}>Password</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      value={password}
-                      onChangeText={setPassword}
-                      placeholder=""
-                      secureTextEntry={true}
-                    />
-                  </View>
+                      {/* Info Message */}
+                      <View style={styles.infoContainer}>
+                        <Text style={styles.infoText}>
+                          We'll send a one-time password to your email
+                        </Text>
+                      </View>
+                    </>
+                  ) : (
+                    <>
+                      {/* OTP Input */}
+                      <View style={styles.inputContainer}>
+                        <Text style={styles.inputLabel}>Enter OTP Code</Text>
+                        <TextInput
+                          style={styles.textInput}
+                          value={otp}
+                          onChangeText={setOtp}
+                          placeholder="8-character code"
+                          placeholderTextColor="#9CA3AF"
+                          autoCapitalize="characters"
+                          maxLength={8}
+                        />
+                      </View>
 
-                  {/* Forgot Password */}
-                  <Pressable style={styles.forgotPasswordContainer}>
-                    <Text style={styles.forgotPasswordText}>Forgot password?</Text>
-                  </Pressable>
+                      {/* Info Message */}
+                      <View style={styles.infoContainer}>
+                        <Text style={styles.infoText}>
+                          Check your email ({email}) for the OTP code
+                        </Text>
+                      </View>
+
+                      {/* Resend OTP */}
+                      <Pressable 
+                        style={styles.forgotPasswordContainer}
+                        onPress={() => {
+                          setOtpSent(false);
+                          setOtp('');
+                          setSignInError('');
+                        }}
+                      >
+                        <Text style={styles.forgotPasswordText}>Use different email</Text>
+                      </Pressable>
+                    </>
+                  )}
 
                   {/* Error Message */}
                   {signInError ? (
@@ -352,7 +376,10 @@ export default function HomePage() {
                     disabled={isSignInLoading}
                   >
                     <Text style={styles.signInModalButtonText}>
-                      {isSignInLoading ? 'Signing in...' : 'Sign in'}
+                      {isSignInLoading 
+                        ? (otpSent ? 'Verifying...' : 'Sending OTP...') 
+                        : (otpSent ? 'Verify & Sign in' : 'Send OTP')
+                      }
                     </Text>
                   </Pressable>
                   
@@ -424,28 +451,11 @@ export default function HomePage() {
                     />
                   </View>
 
-                  {/* Password Input */}
-                  <View style={styles.inputContainer}>
-                    <Text style={styles.inputLabel}>Password</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      value={signUpPassword}
-                      onChangeText={setSignUpPassword}
-                      placeholder=""
-                      secureTextEntry={true}
-                    />
-                  </View>
-
-                  {/* Confirm Password Input */}
-                  <View style={styles.inputContainer}>
-                    <Text style={styles.inputLabel}>Confirm Password</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      value={confirmPassword}
-                      onChangeText={setConfirmPassword}
-                      placeholder=""
-                      secureTextEntry={true}
-                    />
+                  {/* Info Message */}
+                  <View style={styles.infoContainer}>
+                    <Text style={styles.infoText}>
+                      No password required! You'll login with OTP sent to your email.
+                    </Text>
                   </View>
 
                   {/* Error Message */}
@@ -693,5 +703,20 @@ const styles = StyleSheet.create({
   },
   bottomSpacer: {
     height: 40,
+  },
+  infoContainer: {
+    backgroundColor: '#E8F5E9',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#81C784',
+  },
+  infoText: {
+    color: '#2E7D32',
+    fontSize: 13,
+    fontFamily: 'Be Vietnam Pro',
+    fontWeight: '500',
+    textAlign: 'center',
   },
 });
