@@ -19,6 +19,8 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
         return focused ? 'menu' : 'menu-outline';
       case 'camera':
         return focused ? 'camera' : 'camera-outline';
+      case 'voice':
+        return focused ? 'mic' : 'mic-outline';
       case 'statistic':
         return focused ? 'bar-chart' : 'bar-chart-outline';
       case 'profile':
@@ -87,10 +89,10 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
       </View>
       
       <View style={styles.rightSection}>
-        {/* Right tabs (index 3, 4) */}
-        {state.routes.slice(3, 5).map((route, index) => {
+        {/* Right tabs (index 4, 5) - adjusted for new voice tab */}
+        {state.routes.slice(4, 6).map((route, index) => {
           const { options } = descriptors[route.key];
-          const actualIndex = index + 3; // Adjust for actual index
+          const actualIndex = index + 4; // Adjust for actual index
           const isFocused = state.index === actualIndex;
           
           const onPress = () => {
@@ -120,36 +122,71 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
         })}
       </View>
       
-      {/* Fixed camera button in center */}
-      <View style={styles.fixedCameraContainer}>
-        {(() => {
-          const cameraRoute = state.routes[2]; // Camera is always at index 2
-          const isCameraFocused = state.index === 2;
-          
-          const onPress = () => {
-            const event = navigation.emit({
-              type: 'tabPress',
-              target: cameraRoute.key,
-              canPreventDefault: true,
-            });
-            if (!isCameraFocused && !event.defaultPrevented) {
-              navigation.navigate('camera');
-            }
-          };
+      {/* Fixed camera and voice buttons in center */}
+      <View style={styles.fixedCenterContainer}>
+        {/* Camera Button */}
+        <View style={styles.fixedCenterButtonContainer}>
+          {(() => {
+            const cameraRoute = state.routes[2]; // Camera is always at index 2
+            const isCameraFocused = state.index === 2;
+            
+            const onPress = () => {
+              const event = navigation.emit({
+                type: 'tabPress',
+                target: cameraRoute.key,
+                canPreventDefault: true,
+              });
+              if (!isCameraFocused && !event.defaultPrevented) {
+                navigation.navigate('camera');
+              }
+            };
 
-          return (
-            <View style={styles.middleTabCircle}>
-              <TouchableOpacity
-                style={styles.middleTabButton}
-                onPress={onPress}
-              >
-                <View style={styles.cameraIconContainer}>
-                  <Ionicons name="camera" size={28} color="#FFFFFF" />
-                </View>
-              </TouchableOpacity>
-            </View>
-          );
-        })()}
+            return (
+              <View style={styles.middleTabCircle}>
+                <TouchableOpacity
+                  style={[styles.middleTabButton, {backgroundColor: '#5F58C2'}]}
+                  onPress={onPress}
+                >
+                  <View style={styles.iconContainer}>
+                    <Ionicons name="camera" size={26} color="#FFFFFF" />
+                  </View>
+                </TouchableOpacity>
+              </View>
+            );
+          })()}
+        </View>
+        
+        {/* Voice Button */}
+        <View style={styles.fixedCenterButtonContainer}>
+          {(() => {
+            const voiceRoute = state.routes[3]; // Voice is at index 3
+            const isVoiceFocused = state.index === 3;
+            
+            const onPress = () => {
+              const event = navigation.emit({
+                type: 'tabPress',
+                target: voiceRoute.key,
+                canPreventDefault: true,
+              });
+              if (!isVoiceFocused && !event.defaultPrevented) {
+                navigation.navigate('voice');
+              }
+            };
+
+            return (
+              <View style={styles.middleTabCircle}>
+                <TouchableOpacity
+                  style={[styles.middleTabButton, {backgroundColor: '#FF6B6B'}]}
+                  onPress={onPress}
+                >
+                  <View style={styles.iconContainer}>
+                    <Ionicons name="mic" size={26} color="#FFFFFF" />
+                  </View>
+                </TouchableOpacity>
+              </View>
+            );
+          })()}
+        </View>
       </View>
     </View>
   );
@@ -228,6 +265,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  fixedCenterContainer: {
+    position: 'absolute',
+    left: '50%',
+    marginLeft: -85, // Adjusted for two buttons
+    top: -20,
+    zIndex: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: 170, // Width for two buttons with spacing
+  },
+  fixedCenterButtonContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 70,
+    marginHorizontal: 7,
+  },
 
 
   tabButton: {
@@ -265,6 +318,10 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   cameraIconContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconContainer: {
     alignItems: 'center',
     justifyContent: 'center',
   },

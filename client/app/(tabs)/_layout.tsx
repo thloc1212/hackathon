@@ -52,6 +52,7 @@ export default function RootLayout() {
         <Tabs.Screen name="home" options={{ title: 'Trang chủ', tabBarLabel: 'Trang chủ' }} />
         <Tabs.Screen name="categories" options={{ title: 'Danh mục', tabBarLabel: 'Danh mục' }} />
         <Tabs.Screen name="camera" options={{ title: 'Camera', tabBarLabel: 'Camera' }} />
+        <Tabs.Screen name="voice" options={{ title: 'Giọng nói', tabBarLabel: 'Giọng nói' }} />
         <Tabs.Screen name="statistic" options={{ title: 'Thống kê', tabBarLabel: 'Thống kê' }} />
         <Tabs.Screen name="profile" options={{ title: 'Hồ sơ', tabBarLabel: 'Hồ sơ' }} />
       </Tabs>

@@ -1,0 +1,8 @@
+
+{
+  "name": "Hóa đơn AI bằng giọng nói",
+  "description": "Một ứng dụng do AI cung cấp, lắng nghe giọng nói của bạn mô tả một giao dịch mua và tạo ra một hóa đơn JSON có cấu trúc.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
