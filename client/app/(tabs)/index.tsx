@@ -85,7 +85,7 @@ export default function HomePage() {
     
     try {
       if (!email || !password) {
-        setSignInError('Please fill in all fields');
+        setSignInError('Vui lòng điền đầy đủ thông tin');
         setIsSignInLoading(false);
         return;
       }
@@ -99,7 +99,7 @@ export default function HomePage() {
       setShowSignInModal(false);
       
     } catch (error) {
-      setSignInError((error as Error).message || 'Failed to sign in');
+      setSignInError((error as Error).message || 'Không thể đăng nhập');
     } finally {
       setIsSignInLoading(false);
     }
@@ -112,14 +112,14 @@ export default function HomePage() {
     try {
       // Validate required fields
       if (!signUpName || !signUpEmail || !signUpPassword || !confirmPassword || !dateOfBirth) {
-        setSignUpError('Please fill in all fields');
+        setSignUpError('Vui lòng điền đầy đủ thông tin');
         setIsSignUpLoading(false);
         return;
       }
 
       // Validate name
       if (signUpName.trim().length < 2) {
-        setSignUpError('Name must be at least 2 characters long');
+        setSignUpError('Tên phải có ít nhất 2 ký tự');
         setIsSignUpLoading(false);
         return;
       }
@@ -127,7 +127,7 @@ export default function HomePage() {
       // Validate email format
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(signUpEmail)) {
-        setSignUpError('Please enter a valid email address');
+        setSignUpError('Vui lòng nhập địa chỉ email hợp lệ');
         setIsSignUpLoading(false);
         return;
       }
@@ -135,21 +135,21 @@ export default function HomePage() {
       // Validate date of birth format (YYYY-MM-DD or DD/MM/YYYY or MM/DD/YYYY)
       const dateRegex = /^(\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4})$/;
       if (!dateRegex.test(dateOfBirth)) {
-        setSignUpError('Please enter date in format YYYY-MM-DD or DD/MM/YYYY');
+        setSignUpError('Vui lòng nhập ngày theo định dạng YYYY-MM-DD hoặc DD/MM/YYYY');
         setIsSignUpLoading(false);
         return;
       }
 
       // Validate password match
       if (signUpPassword !== confirmPassword) {
-        setSignUpError('Passwords do not match');
+        setSignUpError('Mật khẩu không khớp');
         setIsSignUpLoading(false);
         return;
       }
 
       // Validate password length
       if (signUpPassword.length < 6) {
-        setSignUpError('Password must be at least 6 characters long');
+        setSignUpError('Mật khẩu phải có ít nhất 6 ký tự');
         setIsSignUpLoading(false);
         return;
       }
@@ -176,7 +176,7 @@ export default function HomePage() {
       setShowSignUpModal(false);
       
     } catch (error) {
-      setSignUpError((error as Error).message || 'Failed to create account');
+      setSignUpError((error as Error).message || 'Không thể tạo tài khoản');
     } finally {
       setIsSignUpLoading(false);
     }
@@ -270,19 +270,19 @@ export default function HomePage() {
       
       {/* Main Content */}
       <View style={styles.content}>
-        <Text style={styles.welcomeText}>Welcome Back!</Text>
+        <Text style={styles.welcomeText}>Chào mừng trở lại!</Text>
         <Text style={styles.subtitleText}>
-          Your daily spending, transformed into{"\n"}meaningful insights with AI.
+          Chi tiêu hàng ngày của bạn, biến thành{"\n"}những hiểu biết có ý nghĩa với AI.
         </Text>
       </View>
       
       {/* Authentication Buttons */}
       <View style={styles.authButtonsContainer}>
         <Pressable style={styles.signInButton} onPress={handleSignIn}>
-          <Text style={styles.signInText}>Sign In</Text>
+          <Text style={styles.signInText}>Đăng nhập</Text>
         </Pressable>
         <Pressable style={styles.signUpButton} onPress={handleSignUp}>
-          <Text style={styles.signUpText}>Sign Up</Text>
+          <Text style={styles.signUpText}>Đăng ký</Text>
         </Pressable>
       </View>
 
@@ -306,7 +306,7 @@ export default function HomePage() {
               >
                 {/* Modal Content */}
                 <View style={styles.signInCard}>
-                  <Text style={styles.signInTitle}>Sign in</Text>
+                  <Text style={styles.signInTitle}>Đăng nhập</Text>
                   
                   {/* Email Input */}
                   <View style={styles.inputContainer}>
@@ -323,7 +323,7 @@ export default function HomePage() {
 
                   {/* Password Input */}
                   <View style={styles.inputContainer}>
-                    <Text style={styles.inputLabel}>Password</Text>
+                    <Text style={styles.inputLabel}>Mật khẩu</Text>
                     <TextInput
                       style={styles.textInput}
                       value={password}
@@ -335,7 +335,7 @@ export default function HomePage() {
 
                   {/* Forgot Password */}
                   <Pressable style={styles.forgotPasswordContainer}>
-                    <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+                    <Text style={styles.forgotPasswordText}>Quên mật khẩu?</Text>
                   </Pressable>
 
                   {/* Error Message */}
@@ -352,7 +352,7 @@ export default function HomePage() {
                     disabled={isSignInLoading}
                   >
                     <Text style={styles.signInModalButtonText}>
-                      {isSignInLoading ? 'Signing in...' : 'Sign in'}
+                      {isSignInLoading ? 'Đang đăng nhập...' : 'Đăng nhập'}
                     </Text>
                   </Pressable>
                   
@@ -385,11 +385,11 @@ export default function HomePage() {
               >
                 {/* Modal Content */}
                 <View style={styles.signInCard}>
-                  <Text style={styles.signInTitle}>Sign Up</Text>
+                  <Text style={styles.signInTitle}>Đăng ký</Text>
                   
                   {/* Name Input */}
                   <View style={styles.inputContainer}>
-                    <Text style={styles.inputLabel}>Name</Text>
+                    <Text style={styles.inputLabel}>Tên</Text>
                     <TextInput
                       style={styles.textInput}
                       value={signUpName}
@@ -414,7 +414,7 @@ export default function HomePage() {
 
                   {/* Date of Birth Input */}
                   <View style={styles.inputContainer}>
-                    <Text style={styles.inputLabel}>Date of birth</Text>
+                    <Text style={styles.inputLabel}>Ngày sinh</Text>
                     <TextInput
                       style={styles.textInput}
                       value={dateOfBirth}
@@ -426,7 +426,7 @@ export default function HomePage() {
 
                   {/* Password Input */}
                   <View style={styles.inputContainer}>
-                    <Text style={styles.inputLabel}>Password</Text>
+                    <Text style={styles.inputLabel}>Mật khẩu</Text>
                     <TextInput
                       style={styles.textInput}
                       value={signUpPassword}
@@ -438,7 +438,7 @@ export default function HomePage() {
 
                   {/* Confirm Password Input */}
                   <View style={styles.inputContainer}>
-                    <Text style={styles.inputLabel}>Confirm Password</Text>
+                    <Text style={styles.inputLabel}>Xác nhận mật khẩu</Text>
                     <TextInput
                       style={styles.textInput}
                       value={confirmPassword}
@@ -462,7 +462,7 @@ export default function HomePage() {
                     disabled={isSignUpLoading}
                   >
                     <Text style={styles.signInModalButtonText}>
-                      {isSignUpLoading ? 'Creating account...' : 'Sign up'}
+                      {isSignUpLoading ? 'Đang tạo tài khoản...' : 'Đăng ký'}
                     </Text>
                   </Pressable>
                   

@@ -40,7 +40,7 @@ export default function RootLayout() {
   if (!appIsReady) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffffff' }}>
-        <Text style={{ fontSize: 16, color: '#6b7280' }}>Loading fonts...</Text>
+        <Text style={{ fontSize: 16, color: '#6b7280' }}>Đang tải phông chữ...</Text>
       </View>
     );
   }
@@ -49,7 +49,7 @@ export default function RootLayout() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Hộp thoại' }} />
       </Stack>
       <StatusBar style="dark" />
     </ThemeProvider>

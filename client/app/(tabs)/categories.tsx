@@ -605,13 +605,13 @@ export default function CategoriesScreen() {
 
         {loading ? (
           <View style={styles.loadingContainer}>
-            <ThemedText style={styles.loadingText}>Loading categories...</ThemedText>
+            <ThemedText style={styles.loadingText}>Đang tải danh mục...</ThemedText>
           </View>
         ) : spendingData.categories.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <ThemedText style={styles.emptyTitle}>No Categories Yet</ThemedText>
+            <ThemedText style={styles.emptyTitle}>Chưa có danh mục nào</ThemedText>
             <ThemedText style={styles.emptyText}>
-              Start adding transactions to see your spending categories here.
+              Bắt đầu thêm giao dịch để xem các danh mục chi tiêu của bạn ở đây.
             </ThemedText>
           </View>
         ) : (

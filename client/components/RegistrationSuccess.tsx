@@ -26,20 +26,20 @@ export default function RegistrationSuccess({ onContinue, userEmail }: Registrat
         </View>
 
         {/* Success Message */}
-        <Text style={styles.title}>Registration Successful!</Text>
+        <Text style={styles.title}>Đăng ký thành công!</Text>
         <Text style={styles.subtitle}>
-          Welcome to our platform! Your account has been created successfully.
+          Chào mừng bạn đến với nền tảng của chúng tôi! Tài khoản của bạn đã được tạo thành công.
         </Text>
         
         {userEmail && (
           <Text style={styles.emailText}>
-            Registered with: {userEmail}
+            Đã đăng ký với: {userEmail}
           </Text>
         )}
 
         {/* Continue Button */}
         <Pressable style={styles.continueButton} onPress={onContinue}>
-          <Text style={styles.continueButtonText}>Continue to Sign In</Text>
+          <Text style={styles.continueButtonText}>Tiếp tục đăng nhập</Text>
         </Pressable>
       </View>
     </LinearGradient>

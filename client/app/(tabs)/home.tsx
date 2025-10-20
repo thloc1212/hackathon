@@ -103,18 +103,18 @@ export default function HomeScreen() {
         }
         setShowModal(true);
       } else {
-        Alert.alert('Error', response.error || 'Failed to parse receipt');
+        Alert.alert('Lỗi', response.error || 'Không thể phân tích hóa đơn');
       }
     } catch (err: any) {
       console.error('[client] Gemini error:', err);
-      Alert.alert('Error', err?.message || 'Failed to parse receipt');
+      Alert.alert('Lỗi', err?.message || 'Không thể phân tích hóa đơn');
     }
   };
 
   const handleAddTransaction = async () => {
     if (!structuredResponse || addingTransaction || selectedItems.length === 0) {
       if (selectedItems.length === 0) {
-        Alert.alert('No Items Selected', 'Please select at least one item to add.');
+        Alert.alert('Chưa chọn mặt hàng', 'Vui lòng chọn ít nhất một mặt hàng để thêm.');
       }
       return;
     }
@@ -151,19 +151,19 @@ export default function HomeScreen() {
 
       if (successCount > 0) {
         Alert.alert(
-          'Success', 
-          `${successCount} transaction${successCount > 1 ? 's' : ''} added successfully${failureCount > 0 ? `, ${failureCount} failed` : ''}.`
+          'Thành công', 
+          `Đã thêm ${successCount} giao dịch thành công${failureCount > 0 ? `, ${failureCount} thất bại` : ''}.`
         );
         setShowModal(false);
         setOcrText('');
         setStructuredResponse(null);
         setSelectedItems([]);
       } else {
-        Alert.alert('Error', 'Failed to add any transactions');
+        Alert.alert('Lỗi', 'Không thể thêm bất kỳ giao dịch nào');
       }
     } catch (error) {
       console.error('Add transactions error:', error);
-      Alert.alert('Error', 'Failed to add transactions');
+      Alert.alert('Lỗi', 'Không thể thêm giao dịch');
     } finally {
       setAddingTransaction(false);
     }
@@ -176,7 +176,7 @@ export default function HomeScreen() {
 
   const handleSaveEdit = async () => {
     if (!editingOcrText.trim()) {
-      Alert.alert('Error', 'Please enter some text to parse');
+      Alert.alert('Lỗi', 'Vui lòng nhập một số văn bản để phân tích');
       return;
     }
 
@@ -193,11 +193,11 @@ export default function HomeScreen() {
         setEditMode(false);
         setOcrText(editingOcrText); // Update the main OCR text
       } else {
-        Alert.alert('Error', response.error || 'Failed to parse edited text');
+        Alert.alert('Lỗi', response.error || 'Không thể phân tích văn bản đã chỉnh sửa');
       }
     } catch (err: any) {
       console.error('[client] Edit Gemini error:', err);
-      Alert.alert('Error', err?.message || 'Failed to parse edited text');
+      Alert.alert('Lỗi', err?.message || 'Không thể phân tích văn bản đã chỉnh sửa');
     }
   };
 
@@ -226,13 +226,13 @@ export default function HomeScreen() {
     try {
       const response = await ping();
       if (response.success && response.data) {
-        Alert.alert('Ping Success', `Server is reachable: ${response.data.ok}`);
+        Alert.alert('Ping thành công', `Máy chủ có thể truy cập: ${response.data.ok}`);
       } else {
-        Alert.alert('Ping Error', response.error || 'Failed to ping server');
+        Alert.alert('Lỗi Ping', response.error || 'Không thể ping máy chủ');
       }
     } catch (err) {
       console.error('[client] ping error', err);
-      Alert.alert('Ping Error', `ping error: ${err}`);
+      Alert.alert('Lỗi Ping', `lỗi ping: ${err}`);
     }
   };
 
@@ -240,23 +240,23 @@ export default function HomeScreen() {
     try {
       const response = await parseTest();
       if (response.success) {
-        Alert.alert('Parse Test Success', `Response: ${JSON.stringify(response.data)}`);
+        Alert.alert('Test phân tích thành công', `Phản hồi: ${JSON.stringify(response.data)}`);
       } else {
-        Alert.alert('Parse Test Error', response.error || 'Failed to test parse endpoint');
+        Alert.alert('Lỗi test phân tích', response.error || 'Không thể test endpoint phân tích');
       }
     } catch (err) {
       console.error('[client] parse-test error', err);
-      Alert.alert('Parse Test Error', `parse-test error: ${err}`);
+      Alert.alert('Lỗi test phân tích', `lỗi parse-test: ${err}`);
     }
   };
 
   const handleLogout = async () => {
     try {
       await AuthService.signout();
-      Alert.alert('Success', 'Logged out successfully');
+      Alert.alert('Thành công', 'Đăng xuất thành công');
       // The auth service will trigger the auth change listener and navigate automatically
     } catch (error) {
-      Alert.alert('Error', 'Failed to logout');
+      Alert.alert('Lỗi', 'Không thể đăng xuất');
     }
   };
 
@@ -278,7 +278,7 @@ export default function HomeScreen() {
         {/* Welcome Section */}
         <View style={dashboardStyles.welcomeSection}>
           <Text style={[dashboardStyles.welcomeText, { color: colors.text }]}>
-            Welcome back,
+            Chào mừng bạn trở lại,
           </Text>
           <Text style={[dashboardStyles.userName, { color: "#5F58C2" }]}>
             {userName}!
@@ -295,7 +295,7 @@ export default function HomeScreen() {
             end={{ x: 1, y: 1 }}
             style={dashboardStyles.gradientBackground}
           >
-            <Text style={dashboardStyles.balanceTitle}>Current Balance</Text>
+            <Text style={dashboardStyles.balanceTitle}>Số dư hiện tại</Text>
             <Text style={dashboardStyles.balanceAmount}>{formatCurrency(stats?.balance || 0)}</Text>
           </LinearGradient>
         </View>
@@ -330,7 +330,7 @@ export default function HomeScreen() {
         {/* Recent Transactions */}
         <View style={dashboardStyles.transactionsSection}>
           <Text style={[dashboardStyles.sectionTitle, { color: colors.text }]}>
-            Recent Transactions
+            Giao dịch gần đây
           </Text>
           <View style={dashboardStyles.transactionsList}>
             {Array.isArray(transactions) && transactions.slice(0, 10).map((transaction) => (
@@ -345,7 +345,7 @@ export default function HomeScreen() {
             ))}
             {(!Array.isArray(transactions) || transactions.length === 0) && (
               <Text style={[dashboardStyles.emptyText, { color: colors.text }]}>
-                No transactions yet. Add your first transaction by parsing a receipt above!
+                Chưa có giao dịch nào. Thêm giao dịch đầu tiên bằng cách phân tích hóa đơn ở trên!
               </Text>
             )}
           </View>
@@ -363,7 +363,7 @@ export default function HomeScreen() {
           <View style={dashboardStyles.modalContainer}>
             {/* Modal Header */}
             <View style={dashboardStyles.modalHeader}>
-              <Text style={dashboardStyles.modalTitle}>Receipt Analysis</Text>
+              <Text style={dashboardStyles.modalTitle}>Phân tích hóa đơn</Text>
               <Pressable onPress={handleCloseModal} style={dashboardStyles.closeButton}>
                 <Ionicons name="close" size={24} color="#666" />
               </Pressable>
@@ -373,16 +373,16 @@ export default function HomeScreen() {
             <ScrollView style={dashboardStyles.modalContent} showsVerticalScrollIndicator={false}>
               {editMode ? (
                 <View style={dashboardStyles.editContainer}>
-                  <Text style={dashboardStyles.editTitle}>Edit Receipt Text</Text>
+                  <Text style={dashboardStyles.editTitle}>Sửa văn bản hóa đơn</Text>
                   <Text style={dashboardStyles.editSubtitle}>
-                    Modify the text below and reprocess to get updated results:
+                    Chỉnh sửa văn bản bên dưới và xử lý lại để có kết quả cập nhật:
                   </Text>
                   
                   <TextInput
                     multiline
                     value={editingOcrText}
                     onChangeText={setEditingOcrText}
-                    placeholder="Enter receipt text..."
+                    placeholder="Nhập văn bản hóa đơn..."
                     placeholderTextColor="#64748b"
                     style={dashboardStyles.editTextInput}
                   />
@@ -392,7 +392,7 @@ export default function HomeScreen() {
                       style={[dashboardStyles.editActionButton, dashboardStyles.cancelEditButton]}
                       onPress={handleCancelEdit}
                     >
-                      <Text style={dashboardStyles.cancelEditText}>Cancel</Text>
+                      <Text style={dashboardStyles.cancelEditText}>Hủy</Text>
                     </Pressable>
                     
                     <Pressable
@@ -403,7 +403,7 @@ export default function HomeScreen() {
                       {parseLoading ? (
                         <ActivityIndicator size="small" color="#fff" />
                       ) : (
-                        <Text style={dashboardStyles.saveEditText}>Reprocess</Text>
+                        <Text style={dashboardStyles.saveEditText}>Xử lý lại</Text>
                       )}
                     </Pressable>
                   </View>
@@ -418,7 +418,7 @@ export default function HomeScreen() {
                         <Ionicons name="storefront" size={24} color="#5F58C2" />
                       </View>
                       <View>
-                        <Text style={dashboardStyles.merchantLabel}>Store</Text>
+                        <Text style={dashboardStyles.merchantLabel}>Cửa hàng</Text>
                         <Text style={dashboardStyles.merchantName}>{structuredResponse.merchant}</Text>
                       </View>
                     </View>
@@ -427,7 +427,7 @@ export default function HomeScreen() {
                   {/* Total Amount */}
                   {(structuredResponse.amount || structuredResponse.total) && (
                     <View style={dashboardStyles.totalCard}>
-                      <Text style={dashboardStyles.totalLabel}>Total Amount</Text>
+                      <Text style={dashboardStyles.totalLabel}>Tổng số tiền</Text>
                       <Text style={dashboardStyles.totalAmount}>
                         {formatCurrency(structuredResponse.amount || structuredResponse.total || 0)}
                       </Text>
@@ -440,9 +440,9 @@ export default function HomeScreen() {
                   {/* Items List */}
                   {structuredResponse.items && Array.isArray(structuredResponse.items) && structuredResponse.items.length > 0 && (
                     <View style={dashboardStyles.itemsSection}>
-                      <Text style={dashboardStyles.itemsSectionTitle}>Items Found</Text>
+                      <Text style={dashboardStyles.itemsSectionTitle}>Các mặt hàng tìm thấy</Text>
                       <View style={dashboardStyles.itemsHeader}>
-                        <Text style={dashboardStyles.itemsSubtitle}>Select which items you want to add:</Text>
+                        <Text style={dashboardStyles.itemsSubtitle}>Chọn các mặt hàng bạn muốn thêm:</Text>
                         <Pressable 
                           style={dashboardStyles.selectAllButton}
                           onPress={() => {
@@ -454,7 +454,7 @@ export default function HomeScreen() {
                           }}
                         >
                           <Text style={dashboardStyles.selectAllText}>
-                            {selectedItems.length === structuredResponse.items?.length ? 'Deselect All' : 'Select All'}
+                            {selectedItems.length === structuredResponse.items?.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
                           </Text>
                         </Pressable>
                       </View>
@@ -484,7 +484,7 @@ export default function HomeScreen() {
                                 {formatCurrency(item.price || item.amount || 0)}
                               </Text>
                               {item.quantity && (
-                                <Text style={dashboardStyles.itemQuantity}>Qty: {item.quantity}</Text>
+                                <Text style={dashboardStyles.itemQuantity}>Số lượng: {item.quantity}</Text>
                               )}
                             </View>
                             <View style={dashboardStyles.itemCategoryBadge}>
@@ -508,7 +508,7 @@ export default function HomeScreen() {
                   onPress={handleChangeTransaction}
                 >
                   <Ionicons name="create-outline" size={18} color="#5F58C2" />
-                  <Text style={dashboardStyles.editButtonText}>Edit Input Text</Text>
+                  <Text style={dashboardStyles.editButtonText}>Sửa văn bản đầu vào</Text>
                 </Pressable>
                 
                 <Pressable
@@ -522,7 +522,7 @@ export default function HomeScreen() {
                     <>
                       <Ionicons name="add" size={18} color="#fff" />
                       <Text style={dashboardStyles.addButtonText}>
-                        Add {selectedItems.length} Item{selectedItems.length !== 1 ? 's' : ''}
+                        Thêm {selectedItems.length} mặt hàng
                       </Text>
                     </>
                   )}

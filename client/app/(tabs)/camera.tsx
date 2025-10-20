@@ -68,7 +68,7 @@ export default function CameraScreen() {
     (async () => {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        showCrossPlatformAlert('Permission needed', 'Sorry, we need camera roll permissions to make this work!');
+        showCrossPlatformAlert('Cần cấp quyền', 'Xin lỗi, chúng tôi cần quyền truy cập thư viện ảnh để ứng dụng hoạt động!');
       }
     })();
   }, []);
@@ -81,10 +81,10 @@ export default function CameraScreen() {
     return (
       <View style={styles.container}>
         <Text style={[styles.message, { color: Colors[colorScheme ?? 'light'].text }]}>
-          We need your permission to show the camera
+          Chúng tôi cần quyền của bạn để hiển thị camera
         </Text>
         <TouchableOpacity onPress={requestPermission} style={styles.button}>
-          <Text style={styles.buttonText}>Grant Permission</Text>
+          <Text style={styles.buttonText}>Cấp quyền</Text>
         </TouchableOpacity>
       </View>
     );
@@ -126,31 +126,31 @@ export default function CameraScreen() {
         console.error('Error taking picture:', error);
         
         // Provide more helpful error messages and suggest alternatives
-        let errorMessage = 'Failed to capture photo.';
-        let buttons = [{ text: 'Try Again' }];
+        let errorMessage = 'Không thể chụp ảnh.';
+        let buttons = [{ text: 'Thử lại' }];
         
         if (error instanceof Error) {
           if (error.message.includes('Camera not ready') || error.message.includes('not available')) {
-            errorMessage = 'Camera is not ready. Please wait a moment and try again.';
+            errorMessage = 'Camera chưa sẵn sàng. Vui lòng đợi một chút và thử lại.';
           } else if (error.message.includes('permission')) {
-            errorMessage = 'Camera permission is required to take photos.';
+            errorMessage = 'Cần quyền truy cập camera để chụp ảnh.';
           } else if (Platform.OS === 'android' && (
             error.message.includes('IllegalArgumentException') || 
             error.message.includes('CameraAccessException') ||
             error.message.toLowerCase().includes('deprecated')
           )) {
-            errorMessage = 'Camera compatibility issue detected. Would you like to use photo library instead?';
+            errorMessage = 'Phát hiện vấn đề tương thích camera. Bạn có muốn sử dụng thư viện ảnh thay thế không?';
             // Handle this error case separately for better UX
-            showCrossPlatformAlert('Camera Error', errorMessage, [
-              { text: 'Use Photo Library', onPress: () => pickImage() },
-              { text: 'Try Again' }
+            showCrossPlatformAlert('Lỗi Camera', errorMessage, [
+              { text: 'Dùng thư viện ảnh', onPress: () => pickImage() },
+              { text: 'Thử lại' }
             ]);
             return; // Early return to avoid the generic alert below
           }
         }
         
         // Default error handling for other cases
-        showCrossPlatformAlert('Camera Error', errorMessage);
+        showCrossPlatformAlert('Lỗi Camera', errorMessage);
       }
     }
   };
@@ -175,7 +175,7 @@ export default function CameraScreen() {
       }
     } catch (error) {
       console.error('Error picking image:', error);
-      showCrossPlatformAlert('Error', 'Failed to pick image from library');
+        showCrossPlatformAlert('Lỗi', 'Không thể chọn ảnh từ thư viện');
     }
   };
 
@@ -301,7 +301,7 @@ export default function CameraScreen() {
         errorMessage += '\n\nFor iOS: Try taking a new photo directly with the camera instead of selecting from the photo library.';
       }
       
-      showCrossPlatformAlert('Processing Error', errorMessage);
+      showCrossPlatformAlert('Lỗi xử lý', errorMessage);
     } finally {
       setIsProcessing(false);
     }
@@ -329,7 +329,7 @@ export default function CameraScreen() {
     if (!receiptData || addingTransactions || selectedItems.length === 0) {
       if (selectedItems.length === 0) {
         console.log('No items selected, showing alert');
-        showCrossPlatformAlert('No Items Selected', 'Please select at least one item to add.');
+        showCrossPlatformAlert('Chưa chọn mặt hàng', 'Vui lòng chọn ít nhất một mặt hàng để thêm.');
       }
       return;
     }
@@ -374,10 +374,10 @@ export default function CameraScreen() {
           // Show success message and return to camera
           console.log('About to show success alert');
           showCrossPlatformAlert(
-            'Success ✓', 
-            `${successCount} transaction${successCount > 1 ? 's' : ''} added successfully${failureCount > 0 ? `, ${failureCount} failed` : ''}!`,
+            'Thành công ✓', 
+            `Đã thêm ${successCount} giao dịch thành công${failureCount > 0 ? `, ${failureCount} thất bại` : ''}!`,
             [{ 
-              text: 'Take Another Photo',
+              text: 'Chụp ảnh khác',
               onPress: () => {
                 console.log('Success: Resetting capture');
                 resetCapture(); // Return to camera screen
@@ -388,10 +388,10 @@ export default function CameraScreen() {
           // Show error message and stay on current screen
           console.log('About to show error alert');
           showCrossPlatformAlert(
-            'Error ⚠️', 
-            'Failed to add any transactions. Please check your connection and try again.',
+            'Lỗi ⚠️', 
+            'Không thể thêm bất kỳ giao dịch nào. Vui lòng kiểm tra kết nối và thử lại.',
             [{ 
-              text: 'Retry', 
+              text: 'Thử lại', 
               onPress: () => {
                 console.log('Error: Staying on current screen for retry');
                 // Stay on current screen to allow retry
@@ -406,8 +406,8 @@ export default function CameraScreen() {
       requestAnimationFrame(() => {
         console.log('About to show exception alert');
         showCrossPlatformAlert(
-          'Error ⚠️', 
-          'An unexpected error occurred while adding transactions. Please try again.',
+          'Lỗi ⚠️', 
+          'Đã xảy ra lỗi bất ngờ khi thêm giao dịch. Vui lòng thử lại.',
           [{ 
             text: 'OK', 
             onPress: () => {
@@ -432,12 +432,12 @@ export default function CameraScreen() {
           
           <View style={styles.imageControls}>
             <TouchableOpacity onPress={resetCapture} style={styles.controlButton}>
-              <Text style={styles.controlButtonText}>← Retake</Text>
+              <Text style={styles.controlButtonText}>← Chụp lại</Text>
             </TouchableOpacity>
             
             {isProcessing && (
               <View style={styles.processingContainer}>
-                <Text style={styles.processingText}>Processing receipt...</Text>
+                <Text style={styles.processingText}>Đang xử lý hóa đơn...</Text>
               </View>
             )}
           </View>
@@ -448,7 +448,7 @@ export default function CameraScreen() {
           <View style={[styles.receiptPanel, { backgroundColor: Colors[colorScheme ?? 'light'].background }]}>
             <View style={styles.panelHeader}>
               <Text style={[styles.panelTitle, { color: Colors[colorScheme ?? 'light'].text }]}>
-                Receipt Analysis
+                Phân tích hóa đơn
               </Text>
               <TouchableOpacity onPress={() => setShowPanel(false)}>
                 <Ionicons name="close" size={24} color={Colors[colorScheme ?? 'light'].text} />
@@ -465,7 +465,7 @@ export default function CameraScreen() {
                       </View>
                       <View>
                         <Text style={[styles.merchantLabel, { color: Colors[colorScheme ?? 'light'].icon }]}>
-                          Store
+                          Cửa hàng
                         </Text>
                         <Text style={[styles.merchantName, { color: Colors[colorScheme ?? 'light'].text }]}>
                           {receiptData.merchant}
@@ -477,7 +477,7 @@ export default function CameraScreen() {
                   {/* Total Amount Card */}
                   <View style={styles.totalCard}>
                     <Text style={[styles.totalLabel, { color: Colors[colorScheme ?? 'light'].icon }]}>
-                      Total Amount
+                      Tổng số tiền
                     </Text>
                     <Text style={styles.totalAmount}>
                       {formatCurrency(receiptData.total)}
@@ -493,12 +493,12 @@ export default function CameraScreen() {
                   {receiptData.items && Array.isArray(receiptData.items) && receiptData.items.length > 0 && (
                     <View style={styles.itemsSection}>
                       <Text style={[styles.itemsSectionTitle, { color: Colors[colorScheme ?? 'light'].text }]}>
-                        Items Found
+                        Các mặt hàng tìm thấy
                       </Text>
                       
                       <View style={styles.itemsHeader}>
                         <Text style={[styles.itemsSubtitle, { color: Colors[colorScheme ?? 'light'].icon }]}>
-                          Select which items you want to add:
+                          Chọn các mặt hàng bạn muốn thêm:
                         </Text>
                         <Pressable 
                           style={styles.selectAllButton}
@@ -511,7 +511,7 @@ export default function CameraScreen() {
                           }}
                         >
                           <Text style={styles.selectAllText}>
-                            {selectedItems.length === receiptData.items?.length ? 'Deselect All' : 'Select All'}
+                            {selectedItems.length === receiptData.items?.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
                           </Text>
                         </Pressable>
                       </View>
@@ -567,7 +567,7 @@ export default function CameraScreen() {
                     <>
                       <Ionicons name="add" size={18} color="#fff" />
                       <Text style={styles.addButtonText}>
-                        Add {selectedItems.length} Item{selectedItems.length !== 1 ? 's' : ''}
+                        Thêm {selectedItems.length} mặt hàng
                       </Text>
                     </>
                   )}
@@ -606,7 +606,7 @@ export default function CameraScreen() {
       
       <View style={[styles.instructionContainer, { backgroundColor: Colors[colorScheme ?? 'light'].background }]}>
         <Text style={[styles.instructionText, { color: Colors[colorScheme ?? 'light'].text }]}>
-          Point camera at receipt and tap capture, or choose from album
+          Hướng camera vào hóa đơn và chạm để chụp, hoặc chọn từ thư viện
         </Text>
       </View>
     </View>

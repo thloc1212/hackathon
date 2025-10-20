@@ -49,11 +49,11 @@ export default function RootLayout() {
           tabBarStyle: { backgroundColor: '#F0F3F8', position: 'absolute', borderTopWidth: 0, elevation: 0 },
         }}
       >
-        <Tabs.Screen name="home" options={{ title: 'Home', tabBarLabel: 'Home' }} />
-        <Tabs.Screen name="categories" options={{ title: 'Categories', tabBarLabel: 'Categories' }} />
+        <Tabs.Screen name="home" options={{ title: 'Trang chủ', tabBarLabel: 'Trang chủ' }} />
+        <Tabs.Screen name="categories" options={{ title: 'Danh mục', tabBarLabel: 'Danh mục' }} />
         <Tabs.Screen name="camera" options={{ title: 'Camera', tabBarLabel: 'Camera' }} />
-        <Tabs.Screen name="statistic" options={{ title: 'Statistics', tabBarLabel: 'Statistics' }} />
-        <Tabs.Screen name="profile" options={{ title: 'Profile', tabBarLabel: 'Profile' }} />
+        <Tabs.Screen name="statistic" options={{ title: 'Thống kê', tabBarLabel: 'Thống kê' }} />
+        <Tabs.Screen name="profile" options={{ title: 'Hồ sơ', tabBarLabel: 'Hồ sơ' }} />
       </Tabs>
     </DatabaseProvider>
   );

@@ -53,13 +53,13 @@ export default function TransactionItem({ transaction, colorScheme = 'light', on
 
   const handleSave = async () => {
     if (!editDescription.trim() || !editAmount.trim() || !editCategory.trim()) {
-      Alert.alert('Error', 'Please fill all fields');
+      Alert.alert('Lỗi', 'Vui lòng điền đầy đủ thông tin');
       return;
     }
 
     const amount = parseFloat(editAmount);
     if (isNaN(amount) || amount <= 0) {
-      Alert.alert('Error', 'Please enter a valid amount');
+      Alert.alert('Lỗi', 'Vui lòng nhập số tiền hợp lệ');
       return;
     }
 
@@ -74,18 +74,18 @@ export default function TransactionItem({ transaction, colorScheme = 'light', on
       const response = await updateTransaction(transaction.id, updateData);
       
       if (response.success && response.data) {
-        Alert.alert('Success', 'Transaction updated successfully');
+        Alert.alert('Thành công', 'Giao dịch đã được cập nhật thành công');
         setShowEditModal(false);
         
         if (onTransactionUpdate) {
           onTransactionUpdate(response.data);
         }
       } else {
-        Alert.alert('Error', response.error || 'Failed to update transaction');
+        Alert.alert('Lỗi', response.error || 'Không thể cập nhật giao dịch');
       }
     } catch (error) {
       console.error('Update transaction error:', error);
-      Alert.alert('Error', 'Failed to update transaction');
+      Alert.alert('Lỗi', 'Không thể cập nhật giao dịch');
     } finally {
       setSaving(false);
     }
@@ -145,7 +145,7 @@ export default function TransactionItem({ transaction, colorScheme = 'light', on
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Edit Transaction</Text>
+              <Text style={styles.modalTitle}>Chỉnh sửa giao dịch</Text>
               <Pressable onPress={handleCancel} style={styles.closeButton}>
                 <Ionicons name="close" size={24} color="#666" />
               </Pressable>
@@ -153,17 +153,17 @@ export default function TransactionItem({ transaction, colorScheme = 'light', on
 
             <View style={styles.modalContent}>
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Description</Text>
+                <Text style={styles.inputLabel}>Mô tả</Text>
                 <TextInput
                   style={styles.textInput}
                   value={editDescription}
                   onChangeText={setEditDescription}
-                  placeholder="Transaction description"
+                  placeholder="Mô tả giao dịch"
                 />
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Amount</Text>
+                <Text style={styles.inputLabel}>Số tiền</Text>
                 <TextInput
                   style={styles.textInput}
                   value={editAmount}
@@ -174,7 +174,7 @@ export default function TransactionItem({ transaction, colorScheme = 'light', on
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Category</Text>
+                <Text style={styles.inputLabel}>Danh mục</Text>
                 <Pressable
                   style={styles.dropdownButton}
                   onPress={() => setShowCategoryDropdown(!showCategoryDropdown)}
@@ -221,7 +221,7 @@ export default function TransactionItem({ transaction, colorScheme = 'light', on
                 style={[styles.actionButton, styles.cancelButton]}
                 onPress={handleCancel}
               >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
+                <Text style={styles.cancelButtonText}>Hủy</Text>
               </Pressable>
               
               <Pressable
@@ -230,7 +230,7 @@ export default function TransactionItem({ transaction, colorScheme = 'light', on
                 disabled={saving}
               >
                 <Text style={styles.saveButtonText}>
-                  {saving ? 'Saving...' : 'Save'}
+                  {saving ? 'Đang lưu...' : 'Lưu'}
                 </Text>
               </Pressable>
             </View>

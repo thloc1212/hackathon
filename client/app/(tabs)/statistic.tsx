@@ -238,13 +238,13 @@ export default function StatisticScreen() {
 
           {loading ? (
             <View style={styles.loadingContainer}>
-              <ThemedText style={styles.loadingText}>Loading statistics...</ThemedText>
+              <ThemedText style={styles.loadingText}>Đang tải thống kê...</ThemedText>
             </View>
           ) : data.transactions.length === 0 ? (
             <View style={styles.emptyContainer}>
-              <ThemedText style={styles.emptyTitle}>No Transactions Yet</ThemedText>
+              <ThemedText style={styles.emptyTitle}>Chưa có giao dịch nào</ThemedText>
               <ThemedText style={styles.emptyText}>
-                Start adding transactions to see your spending statistics here.
+                Bắt đầu thêm giao dịch để xem thống kê chi tiêu của bạn ở đây.
               </ThemedText>
             </View>
           ) : (
@@ -287,14 +287,14 @@ export default function StatisticScreen() {
                   ))}
                   {filteredTransactions.length > 3 && (
                     <TouchableOpacity style={styles.viewAllButton} onPress={() => setShowAllTransactions(s => !s)}>
-                      <ThemedText style={[styles.viewAllText, { fontSize: Math.round(14 * scale) }]}>{showAllTransactions ? 'Show less' : 'View All'}</ThemedText>
+                      <ThemedText style={[styles.viewAllText, { fontSize: Math.round(14 * scale) }]}>{showAllTransactions ? 'Hiển thị ít hơn' : 'Xem tất cả'}</ThemedText>
                     </TouchableOpacity>
                   )}
                 </>
               ) : (
                 <View style={styles.noTransactionsContainer}>
                   <ThemedText style={styles.noTransactionsText}>
-                    No transactions in this category yet.
+                    Chưa có giao dịch nào trong danh mục này.
                   </ThemedText>
                 </View>
               )}
