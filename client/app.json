@@ -46,7 +46,8 @@
           }
         }
       ],
-      "expo-barcode-scanner"
+      "expo-barcode-scanner",
+      "expo-speech-recognition"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -14,6 +14,10 @@ import {
   Modal,
   RefreshControl
 } from 'react-native';
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from 'expo-speech-recognition';
 
 // Cross-platform alert function
 const showCrossPlatformAlert = (title: string, message: string, buttons: Array<{text: string, onPress?: () => void, style?: 'default' | 'cancel' | 'destructive'}> = [{text: 'OK'}]) => {
@@ -129,21 +133,71 @@ export default function HomeScreen() {
     parseTest
   } = useApi();
   
+    // Mobile speech recognition event handlers
+    useSpeechRecognitionEvent('result', (event) => {
+      if (Platform.OS !== 'web') {
+        const transcript = event.results[0]?.transcript || '';
+        if (transcript) {
+          setVoiceTranscript(prev => prev + transcript + ' ');
+          setVoiceStatus(`Đang nghe: ${transcript}`);
+        }
+      }
+    });
+  
+    useSpeechRecognitionEvent('error', (event) => {
+      if (Platform.OS !== 'web') {
+        console.error('Mobile speech recognition error:', event.error);
+        setVoiceError(`Lỗi nhận dạng giọng nói: ${event.error}`);
+        setIsRecording(false);
+      
+          if (event.error === 'service-not-allowed' || event.error === 'audio-capture') {
+          showCrossPlatformAlert(
+            'Quyền truy cập bị từ chối',
+            'Bạn cần cấp quyền microphone để sử dụng tính năng nhận dạng giọng nói. Vui lòng vào Cài đặt > Ứng dụng > Finaice > Quyền và bật Microphone.',
+            [{ text: 'OK' }]
+          );
+        }
+      }
+    });
+  
+    useSpeechRecognitionEvent('end', () => {
+      if (Platform.OS !== 'web' && isRecording) {
+        // Restart recognition if still in recording mode
+        try {
+          ExpoSpeechRecognitionModule.start({
+            lang: 'vi-VN',
+            interimResults: true,
+            maxAlternatives: 1,
+            continuous: true,
+          });
+        } catch (e) {
+          console.error('Failed to restart mobile recognition:', e);
+          setIsRecording(false);
+        }
+      }
+    });
+  
   // Toggle voice recording
-  const toggleRecording = () => {
+  const toggleRecording = async () => {
     if (isRecording) {
       // Stop recording and process
       setIsRecording(false);
       setVoiceStatus('');
       
-      // Clean up existing recognition instance
-      if (recognitionRef.current) {
+      // Stop recognition based on platform
+      if (Platform.OS === 'web' && recognitionRef.current) {
         try {
           recognitionRef.current.onend = null; // Remove onend handler to prevent restart
           recognitionRef.current.stop();
           recognitionRef.current = null; // Clear the reference
         } catch (e) {
           console.error('Error stopping recognition:', e);
+        }
+      } else if (Platform.OS !== 'web') {
+        try {
+          await ExpoSpeechRecognitionModule.stop();
+        } catch (e) {
+          console.error('Error stopping mobile recognition:', e);
         }
       }
       
@@ -160,6 +214,33 @@ export default function HomeScreen() {
       setVoiceTranscript('');
       setVoiceError('');
       setVoiceStatus('Đang lắng nghe...');
+      
+      // Start recognition based on platform
+      if (Platform.OS !== 'web') {
+        try {
+          const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+          if (!result.granted) {
+            setIsRecording(false);
+            showCrossPlatformAlert(
+              'Cần quyền truy cập',
+              'Bạn cần cấp quyền microphone để sử dụng tính năng nhận dạng giọng nói.',
+              [{ text: 'OK' }]
+            );
+            return;
+          }
+          
+          await ExpoSpeechRecognitionModule.start({
+            lang: 'vi-VN',
+            interimResults: true,
+            maxAlternatives: 1,
+            continuous: true,
+          });
+        } catch (e) {
+          console.error('Error starting mobile recognition:', e);
+          setIsRecording(false);
+          setVoiceError('Không thể bắt đầu nhận dạng giọng nói');
+        }
+      }
     }
   };
   
@@ -182,25 +263,39 @@ export default function HomeScreen() {
   
   // Initialize speech recognition
   useEffect(() => {
-    if (Platform.OS !== 'web') {
-      // For mobile, we would need native modules
-      return;
-    }
+      // Check permissions and availability
+      const checkPermissions = async () => {
+        if (Platform.OS === 'web') {
+          const SpeechRecognitionAPI = (window as any)?.SpeechRecognition || 
+                                    (window as any)?.webkitSpeechRecognition;
+        
+          if (!SpeechRecognitionAPI) {
+            setPermissionGranted(false);
+            return;
+          }
+        
+          setPermissionGranted(true);
+        } else {
+          // For mobile (Android/iOS), check if speech recognition is available
+          try {
+            const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+            setPermissionGranted(result.granted);
+          
+            if (!result.granted) {
+              console.log('Speech recognition permission denied');
+            }
+          } catch (error) {
+            console.error('Error requesting speech recognition permissions:', error);
+            setPermissionGranted(false);
+          }
+        }
+      };
     
-    const SpeechRecognitionAPI = (window as any)?.SpeechRecognition || 
-                              (window as any)?.webkitSpeechRecognition;
-    
-    if (!SpeechRecognitionAPI) {
-      setPermissionGranted(false);
-      return;
-    }
-    
-    // Setup complete, waiting for user to start
-    setPermissionGranted(true);
+      checkPermissions();
     
     // Clean up recognition on unmount
     return () => {
-      if (recognitionRef.current) {
+        if (Platform.OS === 'web' && recognitionRef.current) {
         try {
           // Clean up all handlers to prevent memory leaks
           recognitionRef.current.onend = null;
@@ -212,6 +307,13 @@ export default function HomeScreen() {
         } finally {
           recognitionRef.current = null;
         }
+        } else if (Platform.OS !== 'web') {
+          // Stop mobile speech recognition
+          try {
+            ExpoSpeechRecognitionModule.stop();
+          } catch (e) {
+            console.log('Error stopping mobile recognition on unmount:', e);
+          }
       }
     };
   }, []);
