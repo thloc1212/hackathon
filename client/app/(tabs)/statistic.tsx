@@ -8,6 +8,7 @@ import { StatusBar } from 'expo-status-bar';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { DateFilter, DateFilterValue } from '@/components/DateFilter';
 import TransactionItem from '@/components/TransactionItem';
 
 // Import types mới
@@ -116,18 +117,36 @@ export default function StatisticScreen() {
   const [showAllTransactions, setShowAllTransactions] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   
+  // State for date filter
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>({ month: null, year: null });
+  
   // Use centralized database context
   const { transactions: apiTransactions, stats, loading, refreshData } = useDatabase();
+
+  // Auto-refresh when component mounts (only once)
+  useEffect(() => {
+    refreshData(); // Don't pass filter on initial load
+  }, []); // Empty dependency to run only once
 
   // Pull to refresh handler
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await refreshData();
+      await refreshData(dateFilter.month, dateFilter.year);
     } catch (error) {
       console.error('Error refreshing data:', error);
     } finally {
       setRefreshing(false);
+    }
+  }, [refreshData, dateFilter]);
+
+  // Handle date filter change
+  const handleDateFilterChange = useCallback(async (filter: DateFilterValue) => {
+    setDateFilter(filter);
+    try {
+      await refreshData(filter.month, filter.year);
+    } catch (error) {
+      console.error('Error applying date filter:', error);
     }
   }, [refreshData]);
   
@@ -222,6 +241,13 @@ export default function StatisticScreen() {
             />
           }
         >
+
+          {/* Date Filter */}
+          <DateFilter
+            value={dateFilter}
+            onChange={handleDateFilterChange}
+            style={styles.dateFilter}
+          />
 
           {/* Tổng Chi Tiêu */}
           <View style={[styles.totalSpentBox, { padding: Math.round(20 * scale), borderRadius: Math.round(16 * scale) }]}>
@@ -351,6 +377,9 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 16,
+  },
+  dateFilter: {
+    marginVertical: 16,
   },
   sectionTitle: {
     fontSize: 25,

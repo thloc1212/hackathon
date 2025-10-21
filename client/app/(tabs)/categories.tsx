@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { DateFilter, DateFilterValue } from '@/components/DateFilter';
 import { SpendingCategory, SpendingData } from '@/types';
 import { formatCurrency } from '@/utils/formatters';
 import { useDatabase } from '@/hooks/useDatabase';
@@ -158,7 +159,7 @@ const BudgetProgress = ({ categories }: { categories: SpendingCategory[] }) => {
                 <View style={[styles.totalDot, { backgroundColor: '#FF6B6B' }]} />
                 <ThemedText style={styles.totalSubLabel}>Đã chi</ThemedText>
               </View>
-              <ThemedText style={[styles.totalSubValue, { color: '#FF6B6B' }]} numberOfLines={1}>{formatCurrency(totalSpent)}</ThemedText>
+              <ThemedText style={[styles.totalSubValue, { color: '#FF6B6B' }]} numberOfLines={1}>{formatCurrency(-totalSpent)}</ThemedText>
             </View>
             <View style={styles.totalSubItem}>
               <View style={styles.totalSubItemRow}>
@@ -340,6 +341,9 @@ export default function CategoriesScreen() {
   // Get real data from database context
   const { transactions, stats, loading, refreshData } = useDatabase();
 
+  // State for date filter
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>({ month: null, year: null });
+
   // State for user-defined budgets
   const [userBudgets, setUserBudgets] = useState<Record<string, number>>({});
   const [budgetsLoaded, setBudgetsLoaded] = useState(false);
@@ -349,17 +353,34 @@ export default function CategoriesScreen() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await refreshData();
+      await refreshData(dateFilter.month, dateFilter.year);
     } catch (error) {
       console.error('Error refreshing data:', error);
     } finally {
       setRefreshing(false);
+    }
+  }, [refreshData, dateFilter]);
+
+  // Handle date filter change
+  const handleDateFilterChange = useCallback(async (filter: DateFilterValue) => {
+    setDateFilter(filter);
+    try {
+      await refreshData(filter.month, filter.year);
+    } catch (error) {
+      console.error('Error applying date filter:', error);
     }
   }, [refreshData]);
 
   // Get current user
   const currentUser = AuthService.getCurrentUser();
   const session = AuthService.getCurrentSession();
+
+  // Auto-refresh when user changes or on initial load (but only once)
+  useEffect(() => {
+    if (currentUser?.id) {
+      refreshData(); // Don't pass filter on initial load
+    }
+  }, [currentUser?.id]); // Remove refreshData and dateFilter from dependencies to avoid infinite loop
 
   // Load user budgets from server on mount
   useEffect(() => {
@@ -601,6 +622,13 @@ export default function CategoriesScreen() {
         {/* Header Section */}
         <View style={styles.welcomeSection}>
           <ThemedText style={styles.title}>Danh Mục</ThemedText>
+          
+          {/* Date Filter */}
+          <DateFilter
+            value={dateFilter}
+            onChange={handleDateFilterChange}
+            style={styles.dateFilter}
+          />
         </View>
 
         {loading ? (
@@ -657,6 +685,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
     paddingTop: 65,
     paddingBottom: 16,
+  },
+  dateFilter: {
+    marginTop: 16,
+    marginHorizontal: -20, // Offset container padding
   },
   title: {
     fontSize: 24,

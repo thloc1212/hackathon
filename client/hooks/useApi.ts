@@ -139,13 +139,18 @@ export const useApi = () => {
     });
   }, []);
 
-  const getTransactions = useCallback(async (limit?: number, offset?: number): Promise<ApiResponse<Transaction[]>> => {
+  const getTransactions = useCallback(async (limit?: number, offset?: number, month?: number | null, year?: number | null): Promise<ApiResponse<Transaction[]>> => {
     const params = new URLSearchParams();
     if (limit) params.append('limit', limit.toString());
     if (offset) params.append('offset', offset.toString());
+    if (month !== null && month !== undefined) params.append('month', month.toString());
+    if (year !== null && year !== undefined) params.append('year', year.toString());
     
     const queryString = params.toString();
     const endpoint = `/transactions${queryString ? `?${queryString}` : ''}`;
+    
+    console.log(`[API] getTransactions endpoint: ${endpoint}`);
+    console.log(`[API] Filter params:`, { limit, offset, month, year });
     
     return makeRequest<Transaction[]>(endpoint, {
       method: 'GET',
@@ -171,13 +176,23 @@ export const useApi = () => {
     });
   }, []);
 
-  const getUserStats = useCallback(async (): Promise<ApiResponse<{
+  const getUserStats = useCallback(async (month?: number | null, year?: number | null): Promise<ApiResponse<{
     totalIncome: number;
     totalExpenses: number;
     balance: number;
     categorySummary: Record<string, number>;
   }>> => {
-    return makeRequest('/transactions/stats', {
+    const params = new URLSearchParams();
+    if (month !== null && month !== undefined) params.append('month', month.toString());
+    if (year !== null && year !== undefined) params.append('year', year.toString());
+    
+    const queryString = params.toString();
+    const endpoint = `/transactions/stats${queryString ? `?${queryString}` : ''}`;
+    
+    console.log(`[API] getUserStats endpoint: ${endpoint}`);
+    console.log(`[API] Stats filter params:`, { month, year });
+    
+    return makeRequest(endpoint, {
       method: 'GET',
     });
   }, []);

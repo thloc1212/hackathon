@@ -524,8 +524,13 @@ app.get('/transactions', verifySession, async (req, res) => {
   try {
     const limit = req.query.limit ? parseInt(req.query.limit) : null;
     const offset = req.query.offset ? parseInt(req.query.offset) : 0;
+    const month = req.query.month ? parseInt(req.query.month) : null;
+    const year = req.query.year ? parseInt(req.query.year) : null;
 
-    const transactions = await database.findTransactionsByUserId(req.user.id, limit, offset);
+    console.log('[GET /transactions] Raw query params:', req.query);
+    console.log('[GET /transactions] Parsed filter params:', { month, year, limit, offset });
+
+    const transactions = await database.findTransactionsByUserId(req.user.id, limit, offset, month, year);
 
     res.json({
       success: true,
@@ -545,7 +550,13 @@ app.get('/transactions', verifySession, async (req, res) => {
 // Get user transaction statistics
 app.get('/transactions/stats', verifySession, async (req, res) => {
   try {
-    const stats = await database.getUserTransactionStats(req.user.id);
+    const month = req.query.month ? parseInt(req.query.month) : null;
+    const year = req.query.year ? parseInt(req.query.year) : null;
+    
+    console.log('[GET /transactions/stats] Raw query params:', req.query);
+    console.log('[GET /transactions/stats] Parsed filter params:', { month, year });
+    
+    const stats = await database.getUserTransactionStats(req.user.id, month, year);
 
     res.json({
       success: true,
