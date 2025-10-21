@@ -1,6 +1,6 @@
-import { Platform, StyleSheet, View, Pressable, ScrollView, TextInput, Modal, TouchableOpacity, Alert, SafeAreaView, RefreshControl } from 'react-native';
-import { useMemo, useState, useCallback, useEffect } from 'react';
-import Svg, { Path, G, Circle } from 'react-native-svg';
+import { Platform, StyleSheet, View, Pressable, ScrollView, TextInput, Modal, TouchableOpacity, Alert, SafeAreaView, RefreshControl, Animated } from 'react-native';
+import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
+import Svg, { Path, G, Circle, Text as SvgText } from 'react-native-svg';
 import { StatusBar } from 'expo-status-bar';
 
 // Cross-platform alert function
@@ -33,6 +33,7 @@ import { SpendingCategory, SpendingData } from '@/types';
 import { formatCurrency } from '@/utils/formatters';
 import { useDatabase } from '@/hooks/useDatabase';
 import AuthService from '@/lib/authService';
+import { FontFamily } from '@/constants/fonts';
 
 // Hàm chuyển đổi độ sang radian
 const polarToCartesian = (centerX: number, centerY: number, radius: number, angleInDegrees: number) => {
@@ -95,6 +96,11 @@ const SERVER_URL = getServerUrl();
 const DEFAULT_BUDGET = 500000; // 500k
 
 const BudgetProgress = ({ categories }: { categories: SpendingCategory[] }) => {
+  // State to track hovered/touched segment
+  const [selectedSegment, setSelectedSegment] = useState<string | null>(null);
+  const [hoveredSegment, setHoveredSegment] = useState<string | null>(null);
+  const tooltipOpacity = useRef(new Animated.Value(0)).current;
+  
   // Filter out income categories (Thu nhập) from statistics
   const expenseCategories = categories.filter(cat => cat.name !== 'Thu nhập');
   
@@ -158,6 +164,56 @@ const BudgetProgress = ({ categories }: { categories: SpendingCategory[] }) => {
   const normalizedRadius = radius - strokeWidth / 2;
   const circumference = 2 * Math.PI * normalizedRadius;
 
+  // Handle segment press
+  const handleSegmentPress = (categoryId: string) => {
+    if (selectedSegment === categoryId) {
+      setSelectedSegment(null);
+      Animated.timing(tooltipOpacity, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      setSelectedSegment(categoryId);
+      Animated.timing(tooltipOpacity, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+    }
+  };
+
+  // Handle hover (web only)
+  const handleSegmentHoverIn = (categoryId: string) => {
+    if (Platform.OS === 'web') {
+      setHoveredSegment(categoryId);
+      if (!selectedSegment) {
+        Animated.timing(tooltipOpacity, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }).start();
+      }
+    }
+  };
+
+  const handleSegmentHoverOut = () => {
+    if (Platform.OS === 'web') {
+      setHoveredSegment(null);
+      if (!selectedSegment) {
+        Animated.timing(tooltipOpacity, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }).start();
+      }
+    }
+  };
+
+  // Get displayed category info (selected takes priority over hovered)
+  const displayedSegmentId = selectedSegment || hoveredSegment;
+  const displayedCategory = sortedCategories.find(cat => cat.id === displayedSegmentId);
+
   return (
     <View style={styles.progressContainer}>
       <View style={styles.totalContainer}>
@@ -193,8 +249,11 @@ const BudgetProgress = ({ categories }: { categories: SpendingCategory[] }) => {
           </View>
         </View>
       </View>
-      <View style={styles.progressCircle}>
-        <Svg height={160} width={160} viewBox={`0 0 ${radius * 2} ${radius * 2}`}>
+      
+      {/* Chart and Info Section */}
+      <View style={styles.chartInfoContainer}>
+        <View style={styles.progressCircle}>
+          <Svg height={160} width={160} viewBox={`0 0 ${radius * 2} ${radius * 2}`}>
           {/* Vẽ các phần chi tiêu */}
           {sortedCategories.map((category, index) => {
             const { startAngle, segmentAngle } = category;
@@ -211,14 +270,38 @@ const BudgetProgress = ({ categories }: { categories: SpendingCategory[] }) => {
               "Z" // Đóng path bằng cách nối về tâm
             ].join(" ");
             
-            return (
+            const isSelected = selectedSegment === category.id;
+            const isHovered = hoveredSegment === category.id;
+            const isHighlighted = isSelected || isHovered;
+            
+            // Darken other segments when one is highlighted
+            const shouldDarken = (selectedSegment || hoveredSegment) && !isHighlighted;
+            
+            const PathComponent = (
               <Path
                 key={category.id}
                 d={pathData}
                 fill={category.color}
-                opacity={0.8}
+                opacity={shouldDarken ? 0.3 : 0.9}
+                onPress={() => handleSegmentPress(category.id)}
+                onPressIn={() => handleSegmentPress(category.id)}
               />
             );
+
+            // For web, wrap with hover handlers
+            if (Platform.OS === 'web') {
+              return (
+                <G
+                  key={category.id}
+                  onMouseEnter={() => handleSegmentHoverIn(category.id)}
+                  onMouseLeave={handleSegmentHoverOut}
+                >
+                  {PathComponent}
+                </G>
+              );
+            }
+            
+            return PathComponent;
           })}
           
           {/* Vòng tròn trắng ở giữa để tạo hiệu ứng donut chart */}
@@ -241,6 +324,29 @@ const BudgetProgress = ({ categories }: { categories: SpendingCategory[] }) => {
             strokeWidth={4}
           />
         </Svg>
+      </View>
+      
+      {/* Tooltip on the right side */}
+      {displayedCategory ? (
+        <View style={styles.infoPanel}>
+          <View style={[styles.infoDot, { backgroundColor: displayedCategory.color }]} />
+          <View style={styles.infoContent}>
+            <ThemedText style={styles.infoCategory}>{displayedCategory.name}</ThemedText>
+            <ThemedText style={styles.infoPercentage}>
+              {displayedCategory.spentPercentage.toFixed(1)}%
+            </ThemedText>
+            <ThemedText style={styles.infoAmount}>
+              {formatCurrency(displayedCategory.spent)}
+            </ThemedText>
+          </View>
+        </View>
+      ) : (
+        <View style={styles.infoPanel}>
+          <ThemedText style={styles.infoPlaceholder}>
+            Chạm vào biểu đồ để xem chi tiết
+          </ThemedText>
+        </View>
+      )}
       </View>
     </View>
   );
@@ -834,8 +940,95 @@ const styles = StyleSheet.create({
     height: 160,
     alignItems: 'center',
     justifyContent: 'center',
-    alignSelf: 'center',
+  },
+  chartInfoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  infoPanel: {
+    flex: 1,
+    marginLeft: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: 100,
+  },
+  infoDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  infoContent: {
+    gap: 6,
+    alignItems: 'center',
+  },
+  infoCategory: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+    fontFamily: FontFamily.semiBold,
+    textAlign: 'center',
+  },
+  infoPercentage: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#5F58C2',
+    fontFamily: FontFamily.bold,
+    textAlign: 'center',
+  },
+  infoAmount: {
+    fontSize: 16,
+    color: '#666',
+    fontFamily: FontFamily.medium,
+    textAlign: 'center',
+  },
+  infoPlaceholder: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
+    fontStyle: 'italic',
+    fontFamily: FontFamily.regular,
+  },
+  tooltip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 12,
     marginTop: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  tooltipDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 12,
+  },
+  tooltipContent: {
+    flex: 1,
+  },
+  tooltipCategory: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 4,
+  },
+  tooltipPercentage: {
+    fontSize: 14,
+    color: '#666',
   },
 
   // Categories container styles
