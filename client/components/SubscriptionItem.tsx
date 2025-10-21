@@ -56,7 +56,8 @@ export default function SubscriptionItem({ subscription, onUpdate, onDelete, onP
   const [editCategory, setEditCategory] = useState(subscription.category);
   const [editStartDate, setEditStartDate] = useState(subscription.startDate);
   const [editIsActive, setEditIsActive] = useState(subscription.isActive);
-  const [isLimitedDuration, setIsLimitedDuration] = useState(subscription.totalMonths !== null);
+  // Consider subscription unlimited if totalMonths is 999 or higher
+  const [isLimitedDuration, setIsLimitedDuration] = useState(subscription.totalMonths !== null && subscription.totalMonths < 999);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -87,12 +88,16 @@ export default function SubscriptionItem({ subscription, onUpdate, onDelete, onP
   const needToPayThisMonth = isCurrentMonthPaid ? 0 : subscription.pricePerMonth;
   
   // Remaining amount for the entire subscription (unlimited subscriptions show 0)
-  const amountLeft = subscription.totalMonths 
-    ? Math.max(0, (subscription.totalMonths * subscription.pricePerMonth) - subscription.paidAmount)
+  // Consider subscription unlimited if totalMonths is 999 or higher
+  const totalMonths = subscription.totalMonths || 0;
+  const isUnlimited = totalMonths >= 999;
+  
+  const amountLeft = !isUnlimited
+    ? Math.max(0, (totalMonths * subscription.pricePerMonth) - subscription.paidAmount)
     : 0; // For unlimited subscriptions, we don't show remaining amount
   
-  const progressPercentage = subscription.totalMonths 
-    ? (Math.min(monthsSinceStart, subscription.totalMonths) / subscription.totalMonths) * 100
+  const progressPercentage = !isUnlimited
+    ? (Math.min(monthsSinceStart, totalMonths) / totalMonths) * 100
     : (monthsSinceStart / Math.max(monthsSinceStart, 12)) * 100; // For unlimited, use a sliding window
 
   const handleEdit = () => {
@@ -104,7 +109,8 @@ export default function SubscriptionItem({ subscription, onUpdate, onDelete, onP
     setEditCategory(subscription.category);
     setEditStartDate(subscription.startDate);
     setEditIsActive(subscription.isActive);
-    setIsLimitedDuration(subscription.totalMonths !== null);
+    const totalMonths = subscription.totalMonths || 0;
+    setIsLimitedDuration(totalMonths > 0 && totalMonths < 999);
   };
 
   const handleSave = async () => {
@@ -120,7 +126,8 @@ export default function SubscriptionItem({ subscription, onUpdate, onDelete, onP
     }
 
     const pricePerMonth = parseFloat(editPricePerMonth);
-    const totalMonths = isLimitedDuration ? parseInt(editTotalMonths) : null;
+    // Use 999 for unlimited subscriptions (matches convention in other components)
+    const totalMonths = isLimitedDuration ? parseInt(editTotalMonths) : 999;
 
     if (isNaN(pricePerMonth) || pricePerMonth <= 0) {
       showCrossPlatformAlert('Lỗi', 'Vui lòng nhập giá hợp lệ');

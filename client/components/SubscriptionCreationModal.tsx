@@ -124,7 +124,8 @@ export default function SubscriptionCreationModal({
       description: description.trim() || name.trim(),
       pricePerMonth: Number(pricePerMonth),
       currentMonth: 0,
-      totalMonths: isLimitedDuration ? Number(totalMonths) : null, // null means unlimited
+      // Server requires totalMonths to be a number, for unlimited use a large number (e.g., 999)
+      totalMonths: isLimitedDuration ? Number(totalMonths) : 999, // 999 months (about 83 years) essentially means unlimited
       paidAmount: paidAmount ? Number(paidAmount) : 0,
       category,
       startDate: startDate,

@@ -197,16 +197,20 @@ export default function HomeScreen() {
         console.log('[home] ✅ NEW SUBSCRIPTION detected with confidence:', subscriptionDetection.confidence);
         
         // Use duration from Gemini detection, with fallback to manual extraction
-        const totalMonths = subscriptionDetection.duration || (() => {
+        // Ensure totalMonths is always a number (required by the server)
+        let totalMonths = subscriptionDetection.duration;
+        
+        if (!totalMonths) {
+          // Try to extract from text
           const durationMatch = ocrText.match(/(\d+)\s*tháng/i);
-          return durationMatch ? parseInt(durationMatch[1]) : null; // Default to unlimited if no duration specified
-        })();
+          totalMonths = durationMatch ? parseInt(durationMatch[1]) : 12; // Default to 12 months if not specified
+        }
         
         // Create proper subscription data
         const subscriptionData = {
           name: subscriptionDetection.subscriptionName || 'Khoảng trả hàng tháng mới',
           pricePerMonth: subscriptionDetection.amount || 0,
-          totalMonths: totalMonths,
+          totalMonths: totalMonths, // This is now guaranteed to be a number
           category: subscriptionDetection.category || 'Khác',
           description: subscriptionDetection.description || 'Khoảng trả hàng tháng mới',
           startDate: new Date().toISOString().split('T')[0], // Today
@@ -349,10 +353,23 @@ export default function HomeScreen() {
       
       console.log('[home] Creating new subscription:', subscriptionData);
       
-      const success = await addSubscriptionToDb(subscriptionData);
+      // Ensure required fields are present
+      const validatedData = {
+        ...subscriptionData,
+        // Ensure totalMonths is always a number (required by the server)
+        totalMonths: subscriptionData.totalMonths || 12, // Default to 12 months if missing
+        // Ensure other required fields have valid values
+        name: subscriptionData.name || 'Khoảng trả hàng tháng mới',
+        pricePerMonth: subscriptionData.pricePerMonth || 0,
+        category: subscriptionData.category || 'Khác'
+      };
+      
+      console.log('[home] Validated subscription data:', validatedData);
+      
+      const success = await addSubscriptionToDb(validatedData);
       
       if (success) {
-        showCrossPlatformAlert('Thành công!', `Đã tạo khoảng trả hàng tháng "${subscriptionData.name}" thành công!`);
+        showCrossPlatformAlert('Thành công!', `Đã tạo khoảng trả hàng tháng "${validatedData.name}" thành công!`);
         setShowSubscriptionCreationModal(false);
         setNewSubscriptionData(null);
         
