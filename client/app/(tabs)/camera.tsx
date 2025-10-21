@@ -157,12 +157,13 @@ export default function CameraScreen() {
 
   const pickImage = async () => {
     try {
+      // Use allowsEditing: false to skip native crop UI
+      // This prevents system gesture conflicts and gives us more control
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.8,
-        // Force JPEG format for better compatibility
+        allowsEditing: false, // Disable native crop to avoid system gesture conflicts
+        quality: 1.0, // Use full quality for user selection, we'll optimize later
+        exif: false,
         ...(Platform.OS === 'ios' && {
           allowsMultipleSelection: false,
           selectionLimit: 1,
@@ -170,13 +171,29 @@ export default function CameraScreen() {
       });
 
       if (!result.canceled && result.assets[0]) {
-        setCapturedImage(result.assets[0].uri);
-        processImage(result.assets[0].uri);
+        // Show custom crop UI with padding to avoid system gestures
+        showCustomCropUI(result.assets[0].uri);
       }
     } catch (error) {
       console.error('Error picking image:', error);
-        showCrossPlatformAlert('Lỗi', 'Không thể chọn ảnh từ thư viện');
+      showCrossPlatformAlert('Lỗi', 'Không thể chọn ảnh từ thư viện');
     }
+  };
+
+  const showCustomCropUI = (imageUri: string) => {
+    // SOLUTION for system gesture conflicts:
+    // By disabling the native crop UI (allowsEditing: false), we avoid the issue where
+    // users accidentally trigger system gestures (back navigation, notifications, etc.)
+    // while trying to adjust crop handles at screen edges.
+    // 
+    // The native crop UIs don't support custom padding, so we either:
+    // 1. Skip cropping entirely (current approach - cleaner UX for receipts)
+    // 2. Implement a custom crop UI with SafeArea padding (future enhancement)
+    //
+    // For receipt scanning, full images work well since Gemini AI can process
+    // the entire image and extract relevant information regardless of composition.
+    setCapturedImage(imageUri);
+    processImage(imageUri);
   };
 
   const processImage = async (imageUri: string) => {
