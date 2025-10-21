@@ -82,3 +82,33 @@ export interface StatisticData {
   topSpending: SpendingSummary[];
   insight: string; // Mẹo tiết kiệm
 }
+
+/**
+ * Monthly subscription interface for recurring payments
+ */
+export interface Subscription {
+  id: string;
+  name: string; // Subscription name (e.g., "Netflix", "Spotify")
+  description?: string; // Optional description
+  pricePerMonth: number; // Monthly price
+  currentMonth: number; // Current month in the subscription (1-based)
+  totalMonths: number | null; // Total months for the subscription (null for unlimited)
+  paidAmount: number; // How much has already been paid
+  category: string; // Category (e.g., "Entertainment", "Software", "Utilities")
+  startDate: string; // When the subscription started (YYYY-MM-DD format)
+  nextPaymentDate: string; // When the next payment is due (YYYY-MM-DD format)
+  isActive: boolean; // Whether the subscription is active
+  color?: string; // Optional color for UI display
+}
+
+/**
+ * Subscription payment tracking for each month
+ */
+export interface SubscriptionPayment {
+  id: string;
+  subscriptionId: string;
+  month: number; // Which month this payment is for (1-based)
+  amount: number; // Amount paid for this month
+  paymentDate: string; // When this payment was made (YYYY-MM-DD format)
+  isPaid: boolean; // Whether this month has been paid
+}

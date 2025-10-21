@@ -10,11 +10,13 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { DateFilter, DateFilterValue } from '@/components/DateFilter';
 import TransactionItem from '@/components/TransactionItem';
+import SubscriptionSelectionModal from '@/components/SubscriptionSelectionModal';
 
 // Import types mới
-import { StatisticData, SpendingSummary, Transaction } from '@/types';
+import { StatisticData, SpendingSummary, Transaction, Subscription } from '@/types';
 import { useApi } from '@/hooks/useApi';
-import { useDatabase } from '@/hooks/useDatabase'; 
+import { useDatabase } from '@/hooks/useDatabase';
+import SubscriptionItem from '@/components/SubscriptionItem'; 
 
 // Default category if none available; we'll derive tabs from data at runtime
 const DEFAULT_CATEGORY_TABS = ['Tất Cả'];
@@ -115,13 +117,28 @@ const SpendingInsight = ({ topSpending, totalSpent }: { topSpending: SpendingSum
 export default function StatisticScreen() {
   const [selectedCategory, setSelectedCategory] = useState<string>('Tất Cả');
   const [showAllTransactions, setShowAllTransactions] = useState(false);
+  const [showAllSubscriptions, setShowAllSubscriptions] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   
+  // Subscription payment modal state
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+  const [suggestedSubscription, setSuggestedSubscription] = useState<any>(null);
+  const [addingSubscriptionPayment, setAddingSubscriptionPayment] = useState(false);
   // State for date filter
   const [dateFilter, setDateFilter] = useState<DateFilterValue>({ month: null, year: null });
   
   // Use centralized database context
-  const { transactions: apiTransactions, stats, loading, refreshData } = useDatabase();
+  const { 
+    transactions: apiTransactions, 
+    subscriptions, 
+    stats, 
+    loading, 
+    refreshData, 
+    updateSubscription, 
+    deleteSubscription,
+    addTransaction: addTransactionToDb,
+    updateSubscription: updateSubscriptionInDb
+  } = useDatabase();
 
   // Auto-refresh when component mounts (only once)
   useEffect(() => {
@@ -149,6 +166,63 @@ export default function StatisticScreen() {
       console.error('Error applying date filter:', error);
     }
   }, [refreshData]);
+  
+  // Handle subscription payment
+  const handleSubscriptionPayment = async (subscription: Subscription, customAmount?: number) => {
+    try {
+      setAddingSubscriptionPayment(true);
+      
+      const amount = customAmount || subscription.pricePerMonth;
+      
+      // Create transaction for this payment
+      const transactionData = {
+        amount: amount,
+        category: subscription.category,
+        description: `${subscription.name} - Thanh toán hàng tháng`,
+        date: new Date().toISOString().split('T')[0],
+        type: 'expense' as const,
+        merchant: subscription.name,
+        items: []
+      };
+
+      const transactionSuccess = await addTransactionToDb(transactionData);
+      
+      if (transactionSuccess) {
+        // Update subscription payment tracking
+        const updatedSubscription = {
+          ...subscription,
+          paidAmount: subscription.paidAmount + amount,
+          currentMonth: subscription.totalMonths 
+            ? Math.min(subscription.currentMonth + 1, subscription.totalMonths)
+            : subscription.currentMonth + 1 // For unlimited subscriptions, just increment
+        };
+        
+        await updateSubscriptionInDb(subscription.id, updatedSubscription);
+        
+        alert('Thanh toán thành công!');
+        setShowSubscriptionModal(false);
+        setSuggestedSubscription(null);
+      } else {
+        alert('Không thể tạo giao dịch thanh toán');
+      }
+    } catch (error) {
+      console.error('Handle subscription payment error:', error);
+      alert('Không thể xử lý thanh toán subscription');
+    } finally {
+      setAddingSubscriptionPayment(false);
+    }
+  };
+  
+  // Handle opening subscription payment modal
+  const handlePaySubscription = (subscription: Subscription) => {
+    setSuggestedSubscription({
+      name: subscription.name,
+      amount: subscription.pricePerMonth,
+      category: subscription.category,
+      description: `Thanh toán ${subscription.name} tháng này`
+    });
+    setShowSubscriptionModal(true);
+  };
   
   // Convert API transactions to UI format and calculate statistics
   const data = useMemo(() => {
@@ -275,55 +349,8 @@ export default function StatisticScreen() {
             </View>
           ) : (
             <>
-              {/* Tabs */}
-              <View style={styles.tabsContainer}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingVertical: 8 }}>
-                  {categoryTabs.map((tab) => (
-                    <Pressable
-                      key={tab}
-                      style={[
-                        styles.tabButton,
-                        selectedCategory === tab && styles.tabSelected,
-                        { paddingHorizontal: Math.round(12 * scale), paddingVertical: Math.round(6 * scale) }
-                      ]}
-                      onPress={() => setSelectedCategory(tab)}
-                    >
-                      <ThemedText style={[styles.tabText, { fontSize: Math.round(14 * scale) }, selectedCategory === tab ? styles.tabTextSelected : styles.tabTextUnselected]}>
-                        {tab}
-                      </ThemedText>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              </View>
-
-              {/* Transactions */}
-              {displayedTransactions.length > 0 ? (
-                <>
-                  {displayedTransactions.map((transaction: Transaction) => (
-                    <View key={transaction.id} style={{ marginBottom: Math.round(12 * scale) }}>
-                      <TransactionItem
-                        key={transaction.id}
-                        transaction={{
-                          ...transaction,
-                          amount: transaction.category !== 'Thu nhập' ? -Math.abs(transaction.amount || 0) : (transaction.amount || 0),
-                        }}
-                        colorScheme='light'
-                      />                    
-                    </View>
-                  ))}
-                  {filteredTransactions.length > 3 && (
-                    <TouchableOpacity style={styles.viewAllButton} onPress={() => setShowAllTransactions(s => !s)}>
-                      <ThemedText style={[styles.viewAllText, { fontSize: Math.round(14 * scale) }]}>{showAllTransactions ? 'Hiển thị ít hơn' : 'Xem tất cả'}</ThemedText>
-                    </TouchableOpacity>
-                  )}
-                </>
-              ) : (
-                <View style={styles.noTransactionsContainer}>
-                  <ThemedText style={styles.noTransactionsText}>
-                    Chưa có giao dịch nào trong danh mục này.
-                  </ThemedText>
-                </View>
-              )}
+              {/* Mẹo tiết kiệm thông minh (Insights) */}
+              {topSpendingCategory && <SpendingInsight topSpending={topSpendingCategory} totalSpent={typeof data.totalSpent === 'number' ? data.totalSpent : 0} />}
 
               {/* Top 3 */}
               {data.topSpending.length > 0 && (
@@ -345,12 +372,108 @@ export default function StatisticScreen() {
                 </>
               )}
 
-              {topSpendingCategory && <SpendingInsight topSpending={topSpendingCategory} totalSpent={typeof data.totalSpent === 'number' ? data.totalSpent : 0} />}
+              {/* Monthly Subscriptions */}
+              <View style={styles.subscriptionsHeader}>
+                <ThemedText style={[styles.sectionTitle, { fontSize: Math.round(24 * scale), marginTop: Math.round(40 * scale) }]}>Khoảng trả hàng tháng</ThemedText>
+                {subscriptions && subscriptions.length > 2 && (
+                  <Pressable onPress={() => setShowAllSubscriptions(!showAllSubscriptions)}>
+                    <ThemedText style={styles.viewAllSubscriptionsText}>
+                      {showAllSubscriptions ? 'Thu gọn' : 'Xem tất cả'}
+                    </ThemedText>
+                  </Pressable>
+                )}
+              </View>
+              <View style={styles.subscriptionsContainer}>
+                {subscriptions.length > 0 ? (
+                  subscriptions
+                    .slice(0, showAllSubscriptions ? subscriptions.length : 2)
+                    .map((subscription) => (
+                      <SubscriptionItem
+                        key={subscription.id}
+                        subscription={subscription}
+                        onUpdate={refreshData}
+                        onDelete={refreshData}
+                        onPayment={handlePaySubscription}
+                      />
+                    ))
+                ) : (
+                  <ThemedText style={styles.subscriptionsPlaceholder}>
+                    Chưa có khoảng trả hàng tháng nào. Thêm khoảng trả từ trang chủ để theo dõi các khoản thanh toán định kỳ.
+                  </ThemedText>
+                )}
+              </View>
+
+              {/* Tabs */}
+              <View style={styles.tabsContainer}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingVertical: 8 }}>
+                  {categoryTabs.map((tab) => (
+                    <Pressable
+                      key={tab}
+                      style={[
+                        styles.tabButton,
+                        selectedCategory === tab && styles.tabSelected,
+                        { paddingHorizontal: Math.round(12 * scale), paddingVertical: Math.round(6 * scale) }
+                      ]}
+                      onPress={() => setSelectedCategory(tab)}
+                    >
+                      <ThemedText style={[styles.tabText, { fontSize: Math.round(14 * scale) }, selectedCategory === tab ? styles.tabTextSelected : styles.tabTextUnselected]}>
+                        {tab}
+                      </ThemedText>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+
+              {/* Transactions List */}
+              {displayedTransactions.length > 0 ? (
+                <>
+                  {displayedTransactions.map((transaction: Transaction) => (
+                    <View key={transaction.id} style={{ marginBottom: Math.round(12 * scale) }}>
+                      <TransactionItem
+                        key={transaction.id}
+                        transaction={{
+                          ...transaction,
+                          amount: transaction.category !== 'Thu nhập' ? -Math.abs(transaction.amount || 0) : (transaction.amount || 0),
+                        }}
+                        colorScheme='light'
+                        onTransactionUpdate={async () => {
+                          // Refresh data when transaction is updated or deleted
+                          await refreshData();
+                        }}
+                      />                    
+                    </View>
+                  ))}
+                  {filteredTransactions.length > 3 && (
+                    <TouchableOpacity style={styles.viewAllButton} onPress={() => setShowAllTransactions(s => !s)}>
+                      <ThemedText style={[styles.viewAllText, { fontSize: Math.round(14 * scale) }]}>{showAllTransactions ? 'Hiển thị ít hơn' : 'Xem tất cả'}</ThemedText>
+                    </TouchableOpacity>
+                  )}
+                </>
+              ) : (
+                <View style={styles.noTransactionsContainer}>
+                  <ThemedText style={styles.noTransactionsText}>
+                    Chưa có giao dịch nào trong danh mục này.
+                  </ThemedText>
+                </View>
+              )}
             </>
           )}
 
           <View style={{ height: Math.round(100 * scale) }} />
         </ScrollView>
+        
+        {/* Subscription Selection Modal */}
+        <SubscriptionSelectionModal
+          visible={showSubscriptionModal}
+          onClose={() => {
+            setShowSubscriptionModal(false);
+            setSuggestedSubscription(null);
+          }}
+          subscriptions={subscriptions || []}
+          suggestedSubscription={suggestedSubscription}
+          onSelectSubscription={handleSubscriptionPayment}
+          loading={addingSubscriptionPayment}
+        />
       </SafeAreaView>
     </ThemedView>
   );
@@ -591,5 +714,33 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#888',
     textAlign: 'center',
+  },
+  subscriptionsContainer: {
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+    padding: 16,
+    marginBottom: 24,
+  },
+  subscriptionsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  viewAllSubscriptionsText: {
+    fontSize: 14,
+    color: '#5F58C2',
+    fontWeight: '500',
+  },
+  subscriptionsPlaceholder: {
+    fontSize: 16,
+    color: '#888',
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
 });

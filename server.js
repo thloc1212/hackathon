@@ -689,6 +689,327 @@ app.delete('/transactions/:id', verifySession, async (req, res) => {
   }
 });
 
+// Subscription Routes
+
+// Create subscription
+app.post('/subscriptions', verifySession, async (req, res) => {
+  try {
+    const { name, description, pricePerMonth, totalMonths, category, startDate } = req.body;
+
+    // Validate required fields
+    if (!name || !pricePerMonth || !totalMonths || !category) {
+      return res.status(400).json({ 
+        error: 'Name, pricePerMonth, totalMonths, and category are required' 
+      });
+    }
+
+    if (pricePerMonth <= 0 || totalMonths <= 0) {
+      return res.status(400).json({ 
+        error: 'Price per month and total months must be positive numbers' 
+      });
+    }
+
+    const subscriptionData = {
+      userId: req.user.id,
+      name: name.trim(),
+      description: description?.trim() || null,
+      pricePerMonth: parseFloat(pricePerMonth),
+      currentMonth: 1,
+      totalMonths: parseInt(totalMonths),
+      paidAmount: 0,
+      category: category.trim(),
+      startDate: startDate || new Date().toISOString().split('T')[0],
+      nextPaymentDate: startDate || new Date().toISOString().split('T')[0],
+      isActive: true
+    };
+
+    const newSubscription = await database.createSubscription(subscriptionData);
+
+    res.status(201).json({
+      success: true,
+      message: 'Subscription created successfully',
+      data: newSubscription
+    });
+
+  } catch (error) {
+    console.error('Create subscription error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      detail: error.message 
+    });
+  }
+});
+
+// Get user subscriptions
+app.get('/subscriptions', verifySession, async (req, res) => {
+  try {
+    const subscriptions = await database.findSubscriptionsByUserId(req.user.id);
+
+    res.json({
+      success: true,
+      data: subscriptions,
+      count: subscriptions.length
+    });
+
+  } catch (error) {
+    console.error('Get subscriptions error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      detail: error.message 
+    });
+  }
+});
+
+// Get single subscription
+app.get('/subscriptions/:id', verifySession, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const subscription = await database.findSubscriptionById(id);
+
+    if (!subscription) {
+      return res.status(404).json({ 
+        error: 'Subscription not found' 
+      });
+    }
+
+    // Check if subscription belongs to user
+    if (subscription.userId !== req.user.id) {
+      return res.status(403).json({ 
+        error: 'Access denied' 
+      });
+    }
+
+    res.json({
+      success: true,
+      data: subscription
+    });
+
+  } catch (error) {
+    console.error('Get subscription error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      detail: error.message 
+    });
+  }
+});
+
+// Update subscription
+app.put('/subscriptions/:id', verifySession, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updateData = req.body;
+
+    const subscription = await database.findSubscriptionById(id);
+    if (!subscription) {
+      return res.status(404).json({ 
+        error: 'Subscription not found' 
+      });
+    }
+
+    // Check if subscription belongs to user
+    if (subscription.userId !== req.user.id) {
+      return res.status(403).json({ 
+        error: 'Access denied' 
+      });
+    }
+
+    // Convert numeric fields if provided
+    if (updateData.pricePerMonth !== undefined) {
+      updateData.pricePerMonth = parseFloat(updateData.pricePerMonth);
+    }
+    if (updateData.totalMonths !== undefined) {
+      updateData.totalMonths = parseInt(updateData.totalMonths);
+    }
+    if (updateData.currentMonth !== undefined) {
+      updateData.currentMonth = parseInt(updateData.currentMonth);
+    }
+    if (updateData.paidAmount !== undefined) {
+      updateData.paidAmount = parseFloat(updateData.paidAmount);
+    }
+
+    const updatedSubscription = await database.updateSubscription(id, updateData);
+
+    res.json({
+      success: true,
+      message: 'Subscription updated successfully',
+      data: updatedSubscription
+    });
+
+  } catch (error) {
+    console.error('Update subscription error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      detail: error.message 
+    });
+  }
+});
+
+// Pay subscription (update subscription payment status)
+app.post('/subscriptions/:id/pay', verifySession, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const subscription = await database.findSubscriptionById(id);
+
+    if (!subscription) {
+      return res.status(404).json({ 
+        error: 'Subscription not found' 
+      });
+    }
+
+    // Check if subscription belongs to user
+    if (subscription.userId !== req.user.id) {
+      return res.status(403).json({ 
+        error: 'Access denied' 
+      });
+    }
+
+    // Update subscription payment
+    const updatedSubscription = await database.updateSubscription(id, {
+      paidAmount: subscription.paidAmount + subscription.pricePerMonth,
+      currentMonth: Math.min(subscription.currentMonth + 1, subscription.totalMonths),
+      // Update next payment date (add 1 month)
+      nextPaymentDate: new Date(new Date(subscription.nextPaymentDate).setMonth(new Date(subscription.nextPaymentDate).getMonth() + 1)).toISOString().split('T')[0]
+    });
+
+    res.json({
+      success: true,
+      message: 'Subscription payment recorded successfully',
+      data: updatedSubscription
+    });
+
+  } catch (error) {
+    console.error('Pay subscription error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      detail: error.message 
+    });
+  }
+});
+
+// Delete subscription
+app.delete('/subscriptions/:id', verifySession, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const subscription = await database.findSubscriptionById(id);
+
+    if (!subscription) {
+      return res.status(404).json({ 
+        error: 'Subscription not found' 
+      });
+    }
+
+    // Check if subscription belongs to user
+    if (subscription.userId !== req.user.id) {
+      return res.status(403).json({ 
+        error: 'Access denied' 
+      });
+    }
+
+    await database.deleteSubscription(id);
+
+    res.json({
+      success: true,
+      message: 'Subscription deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Delete subscription error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      detail: error.message 
+    });
+  }
+});
+
+// Parse subscription via natural language
+app.post('/subscriptions/parse', verifySession, async (req, res) => {
+  try {
+    const { text } = req.body;
+
+    if (!text) {
+      return res.status(400).json({ 
+        error: 'Text is required for subscription parsing' 
+      });
+    }
+
+    const prompt = `Parse this subscription information into structured data. Return JSON only.
+
+Text: "${text}"
+
+Extract:
+- name (subscription service name)
+- pricePerMonth (monthly price as number)
+- totalMonths (total subscription length in months)
+- category (one of: Giải trí, Mua sắm, Sức khỏe, Giáo dục, Di chuyển, Ăn uống, Khác)
+- startDate (YYYY-MM-DD format, today if not specified)
+- description (optional description)
+
+Category mapping guide:
+- Entertainment/Gaming/Streaming services → "Giải trí"
+- Shopping/E-commerce apps → "Mua sắm"  
+- Health/Fitness apps → "Sức khỏe"
+- Education/Learning apps → "Giáo dục"
+- Transport/Travel apps → "Di chuyển"
+- Food delivery services → "Ăn uống"
+- All other services → "Khác"
+
+Examples:
+"Netflix 199k/month for 12 months" → {"name": "Netflix", "pricePerMonth": 199000, "totalMonths": 12, "category": "Giải trí", "startDate": "2025-10-20"}
+"Spotify Premium 59k monthly, 6 months starting today" → {"name": "Spotify Premium", "pricePerMonth": 59000, "totalMonths": 6, "category": "Giải trí", "startDate": "2025-10-20"}
+
+Return valid JSON object only:`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            name: { type: Type.STRING },
+            pricePerMonth: { type: Type.NUMBER },
+            totalMonths: { type: Type.NUMBER },
+            category: { 
+              type: Type.STRING,
+              enum: ["Giải trí", "Mua sắm", "Sức khỏe", "Giáo dục", "Di chuyển", "Ăn uống", "Khác"]
+            },
+            startDate: { type: Type.STRING },
+            description: { type: Type.STRING }
+          },
+          required: ["name", "pricePerMonth", "totalMonths", "category", "startDate"]
+        }
+      }
+    });
+
+    let parsedData;
+    if (response && response.parsed) {
+      parsedData = response.parsed;
+    } else if (response && typeof response.text === 'string') {
+      try {
+        parsedData = JSON.parse(response.text);
+      } catch (parseErr) {
+        console.error('Failed to JSON.parse subscription response:', parseErr);
+        return res.status(500).json({ error: 'Failed to parse subscription data' });
+      }
+    } else {
+      return res.status(500).json({ error: 'No valid response from AI' });
+    }
+
+    res.json({
+      success: true,
+      data: parsedData
+    });
+
+  } catch (error) {
+    console.error('Parse subscription error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      detail: error.message 
+    });
+  }
+});
+
 // Get user budgets
 app.get('/budgets', verifySession, async (req, res) => {
   try {
@@ -745,12 +1066,281 @@ app.put('/budgets', verifySession, async (req, res) => {
   }
 });
 
+// Helper function to detect subscription patterns
+function detectSubscriptionPattern(text) {
+  const subscriptionCreationKeywords = [
+    'subscription', 'sub ', ' sub', 'đăng ký', 'gói cước', 'register for', 'sign up for',
+    'monthly plan', 'yearly plan', 'premium plan', 'gói premium', 'gói cước',
+    'for 12 months', 'for 6 months', 'trong', 'months', 'tháng',
+    'monthly fee', 'phí hàng tháng', 'per month', '/tháng', '/month',
+    'yearly', 'hàng năm', 'annual'
+  ];
+  
+  // More specific subscription services when mentioned with creation context
+  const subscriptionServices = [
+    'netflix sub', 'spotify sub', 'youtube sub', 'yt sub', 'disney sub',
+    'netflix subscription', 'spotify premium', 'youtube premium', 
+    'office 365', 'adobe', 'canva pro', 'notion', 'figma',
+    'gym membership', 'phòng tập'
+  ];
+  
+  const paymentIndicators = [
+    'tháng này', 'this month', 'thanh toán', 'trả tiền', 'pay ', 'payment',
+    'đã trả', 'paid', 'bill', 'hóa đơn', 'invoice'
+  ];
+  
+  const lowerText = text.toLowerCase().trim();
+  
+  // If it contains payment indicators, it's likely a payment, not subscription creation
+  const hasPaymentIndicator = paymentIndicators.some(indicator => lowerText.includes(indicator));
+  if (hasPaymentIndicator) {
+    console.log(`[detectSubscriptionPattern] Text "${text}" contains payment indicators, not subscription creation`);
+    return false;
+  }
+  
+  // Check for subscription creation keywords or services with creation context
+  const hasSubscriptionKeyword = subscriptionCreationKeywords.some(keyword => lowerText.includes(keyword));
+  const hasSubscriptionService = subscriptionServices.some(service => lowerText.includes(service));
+  
+  // Additional pattern checks for subscription creation
+  const hasNumericDuration = /\d+\s*(?:tháng|months?|years?|năm)/i.test(text);
+  const hasMonthlyPattern = /\d+k?\s*\/?\s*(?:tháng|month|monthly)/i.test(text);
+  
+  const isSubscriptionCreation = hasSubscriptionKeyword || hasSubscriptionService || 
+                                 (hasNumericDuration && hasMonthlyPattern);
+  
+  console.log(`[detectSubscriptionPattern] Text: "${text}", hasSubscriptionKeyword: ${hasSubscriptionKeyword}, hasSubscriptionService: ${hasSubscriptionService}, hasNumericDuration: ${hasNumericDuration}, hasMonthlyPattern: ${hasMonthlyPattern}, hasPaymentIndicator: ${hasPaymentIndicator}, result: ${isSubscriptionCreation}`);
+  
+  return isSubscriptionCreation && !hasPaymentIndicator;
+}
+
+// Helper function to detect subscription payment patterns
+function detectSubscriptionPayment(text) {
+  const paymentIndicators = [
+    'tháng này', 'this month', 'thanh toán', 'trả tiền', 'pay ', 'payment ',
+    'đã trả', 'paid', 'trả ', 'pay for', 'bill', 'hóa đơn', 'invoice'
+  ];
+  
+  const subscriptionServices = [
+    'netflix', 'spotify', 'youtube', 'disney', 'prime', 'office', 'adobe',
+    'internet', 'điện thoại', 'phone', 'mobile', 'wifi', 'gym', 'phòng tập',
+    'app store', 'google play', 'steam', 'gamepass', 'aws', 'cloud',
+    'yt', 'fb', 'facebook', 'instagram', 'tiktok', 'zoom', 'canva',
+    'dropbox', 'icloud', 'onedrive', 'figma', 'slack', 'notion',
+    'amazon', 'hulu', 'paramount', 'hbo', 'max', 'apple music',
+    'google one', 'microsoft 365', 'creative cloud'
+  ];
+  
+  const lowerText = text.toLowerCase().trim();
+  
+  // Check if it contains both a subscription service and payment indicator
+  const hasService = subscriptionServices.some(service => lowerText.includes(service));
+  const hasPayment = paymentIndicators.some(indicator => lowerText.includes(indicator));
+  
+  // Additional checks for common patterns
+  const isPaymentPattern = hasService && hasPayment;
+  
+  // Check for patterns like "netflix 100k", "spotify premium payment", etc.
+  const hasMoneyPattern = /\d+[k|K]|\d+\.\d+|\d+,\d+|\d+ ?(?:đ|vnd|usd|dollar)/i.test(lowerText);
+  
+  // Be more specific: service + money pattern + no subscription creation indicators
+  const subscriptionCreationWords = ['sub ', ' sub', 'subscription', 'đăng ký', 'register', 'sign up'];
+  const hasCreationWords = subscriptionCreationWords.some(word => lowerText.includes(word));
+  
+  const isServiceWithMoneyPayment = hasService && hasMoneyPattern && !hasCreationWords;
+  
+  console.log(`[detectSubscriptionPayment] Text: "${text}", hasService: ${hasService}, hasPayment: ${hasPayment}, hasMoneyPattern: ${hasMoneyPattern}, hasCreationWords: ${hasCreationWords}, result: ${isPaymentPattern || isServiceWithMoneyPayment}`);
+  
+  return isPaymentPattern || isServiceWithMoneyPayment;
+}
+
+// Helper function to handle subscription payment parsing
+async function handleSubscriptionPayment(req, res) {
+  try {
+    const { ocrText } = req.body;
+    
+    const prompt = `Parse this subscription payment information. Return JSON only.
+
+Text: "${ocrText}"
+
+This appears to be a subscription payment. Extract:
+- serviceName (subscription service being paid for)
+- amount (payment amount, estimate if not specified)
+- category (one of: Giải trí, Mua sắm, Sức khỏe, Giáo dục, Di chuyển, Ăn uống, Khác)
+- description (payment description)
+
+Category mapping guide:
+- Entertainment/Gaming/Streaming services → "Giải trí"
+- Shopping/E-commerce apps → "Mua sắm"  
+- Health/Fitness apps → "Sức khỏe"
+- Education/Learning apps → "Giáo dục"
+- Transport/Travel apps → "Di chuyển"
+- Food delivery services → "Ăn uống"
+- All other services → "Khác"
+
+Examples:
+"Netflix tháng này" → {"serviceName": "Netflix", "amount": 199000, "category": "Giải trí", "description": "Thanh toán Netflix tháng này", "isSubscriptionPayment": true}
+"Spotify this month" → {"serviceName": "Spotify Premium", "amount": 59000, "category": "Giải trí", "description": "Thanh toán Spotify this month", "isSubscriptionPayment": true}
+
+Return valid JSON object with isSubscriptionPayment: true:`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            serviceName: { type: Type.STRING },
+            amount: { type: Type.NUMBER },
+            category: { 
+              type: Type.STRING,
+              enum: ["Giải trí", "Mua sắm", "Sức khỏe", "Giáo dục", "Di chuyển", "Ăn uống", "Khác"]
+            },
+            description: { type: Type.STRING },
+            isSubscriptionPayment: { type: Type.BOOLEAN }
+          },
+          required: ["serviceName", "amount", "category", "description", "isSubscriptionPayment"]
+        }
+      }
+    });
+
+    let parsedData;
+    if (response && response.parsed) {
+      parsedData = response.parsed;
+    } else if (response && typeof response.text === 'string') {
+      try {
+        parsedData = JSON.parse(response.text);
+      } catch (parseErr) {
+        console.error('Failed to JSON.parse subscription payment response:', parseErr);
+        return res.status(500).json({ error: 'Failed to parse subscription payment data' });
+      }
+    } else {
+      return res.status(500).json({ error: 'No valid response from AI' });
+    }
+
+    // Ensure the isSubscriptionPayment flag is set
+    parsedData.isSubscriptionPayment = true;
+
+    console.log('[/parse] Subscription payment data being sent to client:', JSON.stringify(parsedData, null, 2));
+    res.json(parsedData);
+  } catch (error) {
+    console.error('Subscription payment parsing error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      detail: error.message 
+    });
+  }
+}
+async function handleSubscriptionParsing(req, res) {
+  try {
+    const { ocrText } = req.body;
+    
+    const prompt = `Parse this subscription creation information into structured data. Return JSON only.
+
+Text: "${ocrText}"
+
+This is for CREATING A NEW SUBSCRIPTION (not a payment). Extract:
+- name (subscription service name - infer full service name if abbreviated)
+- pricePerMonth (estimated monthly price as number in VND if not specified)
+- totalMonths (total subscription length in months, default to 12 if not specified)
+- category (one of: Giải trí, Mua sắm, Sức khỏe, Giáo dục, Di chuyển, Ăn uống, Khác)
+- startDate (YYYY-MM-DD format, today if not specified: ${new Date().toISOString().split('T')[0]})
+- description (brief description of the subscription)
+
+Category mapping guide:
+- Entertainment/Gaming/Streaming services → "Giải trí"
+- Shopping/E-commerce apps → "Mua sắm"  
+- Health/Fitness apps → "Sức khỏe"
+- Education/Learning apps → "Giáo dục"
+- Transport/Travel apps → "Di chuyển"
+- Food delivery services → "Ăn uống"
+- All other services → "Khác"
+
+Common service price estimates (VND):
+- Netflix: 199000, Spotify: 59000, YouTube Premium: 79000, Disney+: 149000
+- Office 365: 169000, Adobe: 499000, Canva Pro: 119000
+- Gym membership: 500000, WiFi/Internet: 300000
+
+Examples:
+"Netflix subscription" → {"name": "Netflix", "pricePerMonth": 199000, "totalMonths": 12, "category": "Giải trí", "startDate": "${new Date().toISOString().split('T')[0]}", "description": "Netflix streaming subscription", "isSubscription": true}
+"yt sub" → {"name": "YouTube Premium", "pricePerMonth": 79000, "totalMonths": 12, "category": "Giải trí", "startDate": "${new Date().toISOString().split('T')[0]}", "description": "YouTube Premium subscription", "isSubscription": true}
+"Spotify Premium for 6 months" → {"name": "Spotify Premium", "pricePerMonth": 59000, "totalMonths": 6, "category": "Giải trí", "startDate": "${new Date().toISOString().split('T')[0]}", "description": "Spotify Premium music subscription for 6 months", "isSubscription": true}
+"gym membership 500k/month" → {"name": "Gym Membership", "pricePerMonth": 500000, "totalMonths": 12, "category": "Sức khỏe", "startDate": "${new Date().toISOString().split('T')[0]}", "description": "Monthly gym membership", "isSubscription": true}
+
+Return valid JSON object with isSubscription: true to indicate this is subscription data:`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            name: { type: Type.STRING },
+            pricePerMonth: { type: Type.NUMBER },
+            totalMonths: { type: Type.NUMBER },
+            category: { 
+              type: Type.STRING,
+              enum: ["Giải trí", "Mua sắm", "Sức khỏe", "Giáo dục", "Di chuyển", "Ăn uống", "Khác"]
+            },
+            startDate: { type: Type.STRING },
+            description: { type: Type.STRING },
+            isSubscription: { type: Type.BOOLEAN }
+          },
+          required: ["name", "pricePerMonth", "totalMonths", "category", "startDate", "isSubscription"]
+        }
+      }
+    });
+
+    let parsedData;
+    if (response && response.parsed) {
+      parsedData = response.parsed;
+    } else if (response && typeof response.text === 'string') {
+      try {
+        parsedData = JSON.parse(response.text);
+      } catch (parseErr) {
+        console.error('Failed to JSON.parse subscription response:', parseErr);
+        return res.status(500).json({ error: 'Failed to parse subscription data' });
+      }
+    } else {
+      return res.status(500).json({ error: 'No valid response from AI' });
+    }
+
+    // Ensure the isSubscription flag is set
+    parsedData.isSubscription = true;
+
+    console.log('[/parse] Subscription data being sent to client:', JSON.stringify(parsedData, null, 2));
+    res.json(parsedData);
+  } catch (error) {
+    console.error('Subscription parsing error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      detail: error.message 
+    });
+  }
+}
+
 // Route chính để parse OCR text hoặc ảnh
 app.post("/parse", async (req, res) => {
   try {
     const { ocrText, imageBase64, mimeType = "image/jpeg" } = req.body;
     // Log incoming request body to help debugging network issues
     console.log('[/parse] incoming body:', { ocrText: ocrText ? `${String(ocrText).slice(0,200)}${String(ocrText).length > 200 ? '...':''}` : undefined, hasImage: !!imageBase64 });
+
+    // Check for subscription payment patterns first (more specific)
+    if (ocrText && detectSubscriptionPayment(ocrText)) {
+      console.log('[/parse] Detected subscription payment pattern, routing to payment parsing');
+      return handleSubscriptionPayment(req, res);
+    }
+
+    // Check if this is a subscription-related input (creation)
+    if (ocrText && detectSubscriptionPattern(ocrText)) {
+      console.log('[/parse] Detected subscription pattern, routing to subscription parsing');
+      return handleSubscriptionParsing(req, res);
+    }
 
     const contents = [{ role: "user", parts: [{ text: buildPrompt() }] }];
     if (ocrText) contents[0].parts.push({ text: `OCR:\n${ocrText}` });
@@ -968,7 +1558,7 @@ CRITICAL: All amounts MUST be positive numbers regardless of income/expense type
 DO NOT use English category names or types.`;
 }
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0';
 app.listen(PORT, HOST, () => {
   console.log(`Server chạy tại http://localhost:${PORT}`);

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { useApi, Transaction as ApiTransaction } from './useApi';
-import { Transaction as UITransaction } from '@/types';
+import { useApi, Transaction as ApiTransaction, Subscription as ApiSubscription } from './useApi';
+import { Transaction as UITransaction, Subscription as UISubscription } from '@/types';
 
 export interface UserStats {
   totalIncome: number;
@@ -13,6 +13,7 @@ export interface UserStats {
 export interface DatabaseContextType {
   // Data
   transactions: UITransaction[]; // Use UI Transaction format for components
+  subscriptions: UISubscription[];
   stats: UserStats | null;
   loading: boolean;
   error: string | null;
@@ -22,6 +23,9 @@ export interface DatabaseContextType {
   addTransaction: (transaction: Omit<ApiTransaction, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) => Promise<boolean>;
   updateTransaction: (id: string, data: Partial<ApiTransaction>) => Promise<boolean>;
   deleteTransaction: (id: string) => Promise<boolean>;
+  addSubscription: (subscription: Omit<ApiSubscription, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) => Promise<boolean>;
+  updateSubscription: (id: string, data: Partial<ApiSubscription>) => Promise<boolean>;
+  deleteSubscription: (id: string) => Promise<boolean>;
 }
 
 const DatabaseContext = createContext<DatabaseContextType | null>(null);
@@ -38,6 +42,7 @@ interface DatabaseProviderProps {
 
 export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children, user }) => {
   const [transactions, setTransactions] = useState<UITransaction[]>([]);
+  const [subscriptions, setSubscriptions] = useState<UISubscription[]>([]);
   const [stats, setStats] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,9 +61,42 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children, us
     note: apiTransaction.merchant || undefined,
   });
 
+  // Category mapping from English to Vietnamese
+  const mapCategoryToVietnamese = (category: string): string => {
+    const categoryMap: { [key: string]: string } = {
+      'Video Streaming': 'Giải trí',
+      'Entertainment': 'Giải trí',
+      'Gaming': 'Giải trí',
+      'Shopping': 'Mua sắm',
+      'Health': 'Sức khỏe',
+      'Education': 'Giáo dục',
+      'Transport': 'Di chuyển',
+      'Food': 'Ăn uống',
+      'Other': 'Khác'
+    };
+    return categoryMap[category] || category;
+  };
+
+  // Convert API subscription format to UI subscription format
+  const convertApiToUISubscription = (apiSubscription: ApiSubscription): UISubscription => ({
+    id: apiSubscription.id,
+    name: apiSubscription.name,
+    description: apiSubscription.description,
+    pricePerMonth: apiSubscription.pricePerMonth,
+    currentMonth: apiSubscription.currentMonth,
+    totalMonths: apiSubscription.totalMonths,
+    paidAmount: apiSubscription.paidAmount,
+    category: mapCategoryToVietnamese(apiSubscription.category),
+    startDate: apiSubscription.startDate,
+    nextPaymentDate: apiSubscription.nextPaymentDate,
+    isActive: apiSubscription.isActive,
+    color: apiSubscription.color,
+  });
+
   const refreshData = async (month?: number | null, year?: number | null) => {
     if (!user) {
       setTransactions([]);
+      setSubscriptions([]);
       setStats(null);
       return;
     }
@@ -90,6 +128,21 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children, us
         setError(transactionsResponse.error || 'Failed to load transactions');
       }
 
+      // Load subscriptions
+      const subscriptionsResponse = await api.getSubscriptions();
+      
+      if (subscriptionsResponse.success && subscriptionsResponse.data) {
+        const apiSubscriptions = Array.isArray(subscriptionsResponse.data) 
+          ? subscriptionsResponse.data 
+          : [];
+        console.log('Raw API subscriptions:', apiSubscriptions);
+        const uiSubscriptions = apiSubscriptions.map(convertApiToUISubscription);
+        console.log('Converted UI subscriptions:', uiSubscriptions);
+        setSubscriptions(uiSubscriptions);
+      } else {
+        console.log('Failed to load subscriptions:', subscriptionsResponse.error);
+        setSubscriptions([]);
+      }
       // Load stats with filter
       const statsResponse = await api.getUserStats(filterMonth, filterYear);
       
@@ -108,6 +161,7 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children, us
       console.error('Error refreshing data:', err);
       setError(err?.message || 'Unknown error occurred');
       setTransactions([]);
+      setSubscriptions([]);
       setStats({
         totalIncome: 0,
         totalExpenses: 0,
@@ -167,7 +221,55 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children, us
     }
   };
 
-  // Auto-refresh when user changes - but only if no filter is set
+  const addSubscription = async (subscriptionData: Omit<ApiSubscription, 'id' | 'userId' | 'createdAt' | 'updatedAt'>): Promise<boolean> => {
+    try {
+      const response = await api.addSubscription(subscriptionData);
+      if (response.success) {
+        await refreshData(); // Refresh all data after adding
+        return true;
+      } else {
+        setError(response.error || 'Failed to add subscription');
+        return false;
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Failed to add subscription');
+      return false;
+    }
+  };
+
+  const updateSubscription = async (id: string, updateData: Partial<ApiSubscription>): Promise<boolean> => {
+    try {
+      const response = await api.updateSubscription(id, updateData);
+      if (response.success) {
+        await refreshData(); // Refresh all data after updating
+        return true;
+      } else {
+        setError(response.error || 'Failed to update subscription');
+        return false;
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Failed to update subscription');
+      return false;
+    }
+  };
+
+  const deleteSubscription = async (id: string): Promise<boolean> => {
+    try {
+      const response = await api.deleteSubscription(id);
+      if (response.success) {
+        await refreshData(); // Refresh all data after deleting
+        return true;
+      } else {
+        setError(response.error || 'Failed to delete subscription');
+        return false;
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Failed to delete subscription');
+      return false;
+    }
+  };
+
+  // Auto-refresh when user changes
   useEffect(() => {
     if (user?.id) {
       refreshData(); // Call without parameters for initial load
@@ -176,6 +278,7 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children, us
 
   const contextValue: DatabaseContextType = {
     transactions,
+    subscriptions,
     stats,
     loading,
     error,
@@ -183,6 +286,9 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children, us
     addTransaction,
     updateTransaction,
     deleteTransaction,
+    addSubscription,
+    updateSubscription,
+    deleteSubscription,
   };
 
   return (

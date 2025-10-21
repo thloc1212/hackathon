@@ -51,6 +51,34 @@ export interface GeminiTransactionResponse {
     quantity?: number;
     category?: string;
   }>;
+  // Subscription properties when isSubscription is true
+  isSubscription?: boolean;
+  name?: string;
+  description?: string;
+  pricePerMonth?: number;
+  totalMonths?: number;
+  startDate?: string;
+  // Subscription payment properties when isSubscriptionPayment is true
+  isSubscriptionPayment?: boolean;
+  serviceName?: string;
+}
+
+export interface Subscription {
+  id: string;
+  userId: string;
+  name: string;
+  description?: string;
+  pricePerMonth: number;
+  currentMonth: number;
+  totalMonths: number | null; // Allow null for unlimited subscriptions
+  paidAmount: number;
+  category: string;
+  startDate: string;
+  nextPaymentDate: string;
+  isActive: boolean;
+  color?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ApiResponse<T> {
@@ -235,6 +263,59 @@ export const useApi = () => {
     });
   }, []);
 
+  // Subscription API methods
+  const addSubscription = useCallback(async (subscriptionData: Omit<Subscription, 'id' | 'userId' | 'createdAt' | 'updatedAt'>): Promise<ApiResponse<Subscription>> => {
+    return makeRequest<Subscription>('/subscriptions', {
+      method: 'POST',
+      body: JSON.stringify(subscriptionData),
+    });
+  }, []);
+
+  const getSubscriptions = useCallback(async (): Promise<ApiResponse<Subscription[]>> => {
+    return makeRequest<Subscription[]>('/subscriptions', {
+      method: 'GET',
+    });
+  }, []);
+
+  const getSubscriptionById = useCallback(async (id: string): Promise<ApiResponse<Subscription>> => {
+    return makeRequest<Subscription>(`/subscriptions/${id}`, {
+      method: 'GET',
+    });
+  }, []);
+
+  const updateSubscription = useCallback(async (id: string, updateData: Partial<Omit<Subscription, 'id' | 'userId' | 'createdAt'>>): Promise<ApiResponse<Subscription>> => {
+    return makeRequest<Subscription>(`/subscriptions/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updateData),
+    });
+  }, []);
+
+  const deleteSubscription = useCallback(async (id: string): Promise<ApiResponse<void>> => {
+    return makeRequest<void>(`/subscriptions/${id}`, {
+      method: 'DELETE',
+    });
+  }, []);
+
+  const paySubscription = useCallback(async (id: string): Promise<ApiResponse<Subscription>> => {
+    return makeRequest<Subscription>(`/subscriptions/${id}/pay`, {
+      method: 'POST',
+    });
+  }, []);
+
+  const parseSubscription = useCallback(async (text: string): Promise<ApiResponse<{
+    name: string;
+    pricePerMonth: number;
+    totalMonths: number;
+    category: string;
+    startDate: string;
+    description?: string;
+  }>> => {
+    return makeRequest('/subscriptions/parse', {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    });
+  }, []);
+
   return {
     loading,
     error,
@@ -245,6 +326,14 @@ export const useApi = () => {
     updateTransaction,
     deleteTransaction,
     getUserStats,
+    // Subscription methods
+    addSubscription,
+    getSubscriptions,
+    getSubscriptionById,
+    updateSubscription,
+    deleteSubscription,
+    paySubscription,
+    parseSubscription,
     // Gemini methods
     parseReceipt,
     getInsight,
