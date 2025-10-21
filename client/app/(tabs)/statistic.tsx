@@ -192,7 +192,9 @@ export default function StatisticScreen() {
         const updatedSubscription = {
           ...subscription,
           paidAmount: subscription.paidAmount + amount,
-          currentMonth: Math.min(subscription.currentMonth + 1, subscription.totalMonths)
+          currentMonth: subscription.totalMonths 
+            ? Math.min(subscription.currentMonth + 1, subscription.totalMonths)
+            : subscription.currentMonth + 1 // For unlimited subscriptions, just increment
         };
         
         await updateSubscriptionInDb(subscription.id, updatedSubscription);
