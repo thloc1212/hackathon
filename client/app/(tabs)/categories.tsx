@@ -1,6 +1,6 @@
 import { Platform, StyleSheet, View, Pressable, ScrollView, TextInput, Modal, TouchableOpacity, Alert, SafeAreaView, RefreshControl } from 'react-native';
 import { useMemo, useState, useCallback, useEffect } from 'react';
-import Svg, { Path, G } from 'react-native-svg';
+import Svg, { Path, G, Circle } from 'react-native-svg';
 import { StatusBar } from 'expo-status-bar';
 
 import { ThemedText } from '@/components/themed-text';
@@ -198,6 +198,26 @@ const BudgetProgress = ({ categories }: { categories: SpendingCategory[] }) => {
               />
             );
           })}
+          
+          {/* Vòng tròn trắng ở giữa để tạo hiệu ứng donut chart */}
+          <Circle
+            cx={radius}
+            cy={radius}
+            r={radius / 2.2}
+            fill="white"
+            stroke="#f8f8f8"
+            strokeWidth={2}
+          />
+          
+          {/* Thêm bóng mờ cho vòng tròn trắng */}
+          <Circle
+            cx={radius}
+            cy={radius}
+            r={radius / 2.2}
+            fill="transparent"
+            stroke="#5F58C210"
+            strokeWidth={4}
+          />
         </Svg>
       </View>
     </View>
