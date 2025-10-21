@@ -699,7 +699,7 @@ app.post('/subscriptions', verifySession, async (req, res) => {
     // Validate required fields
     if (!name || !pricePerMonth || !totalMonths || !category) {
       return res.status(400).json({ 
-        error: 'Name, pricePerMonth, totalMonths, and category are required' 
+        error: 'name, pricePerMonth, totalMonths, and category are required' 
       });
     }
 

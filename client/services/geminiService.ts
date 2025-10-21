@@ -164,10 +164,9 @@ export async function detectSubscriptionPayment(inputText: string, activeSubscri
       .filter(sub => sub.isActive)
       .map(sub => sub.name)
       .join(', ');
-    
-    const subscriptionContext = activeSubscriptions.length > 0 
-      ? `\n\nKhoảng trả hàng tháng hiện tại: ${subscriptionNames}`
-      : '\n\nChưa có khoảng trả hàng tháng nào.';
+    const subscriptionContext = activeSubscriptions.length > 0
+      ? `\n\nKhoản trả hàng tháng hiện tại: ${subscriptionNames}`
+      : '\n\nChưa có khoản trả hàng tháng nào.';
 
     const prompt = `Phân tích văn bản và xác định loại:
 

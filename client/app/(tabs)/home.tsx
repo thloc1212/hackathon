@@ -359,7 +359,7 @@ export default function HomeScreen() {
         // Create installment data for modal
         const installmentInfo = {
           subscriptionData: {
-            name: subscriptionDetection.subscriptionName || 'Khoảng trả góp',
+            name: subscriptionDetection.subscriptionName || 'Khoản trả góp',
             pricePerMonth: subscriptionDetection.amount || 0, // Monthly installment amount
             totalMonths: subscriptionDetection.duration || 12,
             category: subscriptionDetection.category || 'Khác',
@@ -404,11 +404,11 @@ export default function HomeScreen() {
         
         // Create proper subscription data
         const subscriptionData = {
-          name: subscriptionDetection.subscriptionName || 'Khoảng trả hàng tháng mới',
+          name: subscriptionDetection.subscriptionName || 'Khoản trả hàng tháng mới',
           pricePerMonth: subscriptionDetection.amount || 0,
           totalMonths: totalMonths, // This is now guaranteed to be a number
           category: subscriptionDetection.category || 'Khác',
-          description: subscriptionDetection.description || 'Khoảng trả hàng tháng mới',
+          description: subscriptionDetection.description || 'Khoản trả hàng tháng mới',
           startDate: new Date().toISOString().split('T')[0], // Today
           isActive: true,
           currentMonth: 0, // Starting at month 0
@@ -555,7 +555,7 @@ export default function HomeScreen() {
         // Ensure totalMonths is always a number (required by the server)
         totalMonths: subscriptionData.totalMonths || 12, // Default to 12 months if missing
         // Ensure other required fields have valid values
-        name: subscriptionData.name || 'Khoảng trả hàng tháng mới',
+        name: subscriptionData.name || 'Khoản trả hàng tháng mới',
         pricePerMonth: subscriptionData.pricePerMonth || 0,
         category: subscriptionData.category || 'Khác'
       };
@@ -565,18 +565,18 @@ export default function HomeScreen() {
       const success = await addSubscriptionToDb(validatedData);
       
       if (success) {
-        showCrossPlatformAlert('Thành công!', `Đã tạo khoảng trả hàng tháng "${validatedData.name}" thành công!`);
+        showCrossPlatformAlert('Thành công!', `Đã tạo khoản trả hàng tháng "${validatedData.name}" thành công!`);
         setShowSubscriptionCreationModal(false);
         setNewSubscriptionData(null);
         
         // Refresh data to show the new subscription
         await refreshData();
       } else {
-        showCrossPlatformAlert('Lỗi', 'Không thể tạo khoảng trả hàng tháng. Vui lòng thử lại.');
+        showCrossPlatformAlert('Lỗi', 'Không thể tạo khoản trả hàng tháng. Vui lòng thử lại.');
       }
     } catch (error) {
       console.error('Create subscription error:', error);
-      showCrossPlatformAlert('Lỗi', 'Có lỗi xảy ra khi tạo khoảng trả hàng tháng');
+      showCrossPlatformAlert('Lỗi', 'Có lỗi xảy ra khi tạo khoản trả hàng tháng');
     } finally {
       setIsProcessingAI(false);
     }
@@ -600,17 +600,17 @@ export default function HomeScreen() {
         if (transactionSuccess) {
           showCrossPlatformAlert(
             'Tạo thành công!', 
-            `Đã tạo khoảng trả hàng tháng "${installmentData.subscriptionData.name}" với ${installmentData.subscriptionData.totalMonths} tháng (${formatCurrency(installmentData.subscriptionData.pricePerMonth)}/tháng) và ghi nhận khoản trả trước ${formatCurrency(installmentData.upfrontTransaction.amount)}.`
+            `Đã tạo khoản trả hàng tháng "${installmentData.subscriptionData.name}" với ${installmentData.subscriptionData.totalMonths} tháng (${formatCurrency(installmentData.subscriptionData.pricePerMonth)}/tháng) và ghi nhận khoản trả trước ${formatCurrency(installmentData.upfrontTransaction.amount)}.`
           );
           setOcrText('');
           setShowInstallmentModal(false);
           setInstallmentData(null);
           await refreshData();
         } else {
-          showCrossPlatformAlert('Lỗi', 'Đã tạo khoảng trả hàng tháng nhưng không thể ghi nhận khoản trả trước');
+          showCrossPlatformAlert('Lỗi', 'Đã tạo khoản trả hàng tháng (không trả trước)');
         }
       } else {
-        showCrossPlatformAlert('Lỗi', 'Không thể tạo khoảng trả hàng tháng');
+        showCrossPlatformAlert('Lỗi', 'Không thể tạo khoản trả hàng tháng');
       }
     } catch (error) {
       console.error('Create installment plan error:', error);
@@ -862,7 +862,7 @@ export default function HomeScreen() {
         {/* Upcoming Subscriptions */}
         <View style={dashboardStyles.upcomingSection}>
           <View style={dashboardStyles.sectionHeader}>
-            <Text style={dashboardStyles.upcomingSectionTitle}>Khoảng trả hàng tháng</Text>
+            <Text style={dashboardStyles.upcomingSectionTitle}>Khoản trả hàng tháng</Text>
           </View>
           {subscriptions && subscriptions.length > 0 ? (
             <ScrollView 
@@ -977,7 +977,7 @@ export default function HomeScreen() {
             </ScrollView>
             ) : (
               <Text style={dashboardStyles.upcomingEmptyText}>
-                Chưa có khoảng trả hàng tháng nào
+                Chưa có khoản trả hàng tháng nào
               </Text>
             )}
           </View>
@@ -1308,7 +1308,7 @@ export default function HomeScreen() {
                       <View style={dashboardStyles.willCreateItem}>
                         <Ionicons name="repeat-outline" size={20} color="#8B7FE0" />
                         <Text style={dashboardStyles.willCreateText}>
-                          Khoảng trả hàng tháng: {installmentData.subscriptionData.name}
+                          Khoản trả hàng tháng: {installmentData.subscriptionData.name}
                         </Text>
                       </View>
                       <View style={dashboardStyles.willCreateItem}>

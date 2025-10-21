@@ -374,7 +374,7 @@ export default function StatisticScreen() {
 
               {/* Monthly Subscriptions */}
               <View style={styles.subscriptionsHeader}>
-                <ThemedText style={[styles.sectionTitle, { fontSize: Math.round(24 * scale), marginTop: Math.round(40 * scale) }]}>Khoảng trả hàng tháng</ThemedText>
+                <ThemedText style={[styles.sectionTitle, { fontSize: Math.round(24 * scale), marginTop: Math.round(40 * scale) }]}>Khoản trả hàng tháng</ThemedText>
                 {subscriptions && subscriptions.length > 2 && (
                   <Pressable onPress={() => setShowAllSubscriptions(!showAllSubscriptions)}>
                     <ThemedText style={styles.viewAllSubscriptionsText}>
@@ -398,7 +398,7 @@ export default function StatisticScreen() {
                     ))
                 ) : (
                   <ThemedText style={styles.subscriptionsPlaceholder}>
-                    Chưa có khoảng trả hàng tháng nào. Thêm khoảng trả từ trang chủ để theo dõi các khoản thanh toán định kỳ.
+                    Chưa có khoản trả hàng tháng nào. Thêm khoản trả từ trang chủ để theo dõi các khoản thanh toán định kỳ.
                   </ThemedText>
                 )}
               </View>

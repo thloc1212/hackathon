@@ -107,7 +107,7 @@ export default function SubscriptionSelectionModal({
         <View style={styles.modalContainer}>
           {/* Header */}
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Chọn khoảng trả hàng tháng</Text>
+            <Text style={styles.modalTitle}>Chọn khoản trả hàng tháng</Text>
             <Pressable onPress={onClose} style={styles.closeButton}>
               <Ionicons name="close" size={24} color="#666" />
             </Pressable>
@@ -142,14 +142,14 @@ export default function SubscriptionSelectionModal({
 
           {/* Subscription List */}
           <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
-            <Text style={styles.sectionTitle}>Chọn từ danh sách khoảng trả hàng tháng</Text>
+            <Text style={styles.sectionTitle}>Chọn từ danh sách khoản trả hàng tháng</Text>
             
             {subscriptions.length === 0 ? (
               <View style={styles.emptyState}>
                 <Ionicons name="list-outline" size={48} color="#d1d5db" />
-                <Text style={styles.emptyText}>Chưa có khoảng trả hàng tháng nào</Text>
+                <Text style={styles.emptyText}>Chưa có khoản trả nào</Text>
                 <Text style={styles.emptySubText}>
-                  Hãy thêm khoảng trả hàng tháng mới trong tab Categories
+                  Hãy thêm khoản trả mới trong tab Categories
                 </Text>
               </View>
             ) : (

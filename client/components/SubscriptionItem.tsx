@@ -162,16 +162,16 @@ export default function SubscriptionItem({ subscription, onUpdate, onDelete, onP
 
       if (success) {
         setShowEditModal(false);
-        showCrossPlatformAlert('Thành công', 'Khoảng trả đã được cập nhật');
+        showCrossPlatformAlert('Thành công', 'Khoản trả đã được cập nhật');
         if (onUpdate) {
           onUpdate();
         }
       } else {
-        showCrossPlatformAlert('Lỗi', 'Không thể cập nhật khoảng trả');
+        showCrossPlatformAlert('Lỗi', 'Không thể cập nhật khoản trả');
       }
     } catch (error) {
       console.error('Update subscription error:', error);
-      showCrossPlatformAlert('Lỗi', 'Không thể cập nhật khoảng trả');
+      showCrossPlatformAlert('Lỗi', 'Không thể cập nhật khoản trả');
     } finally {
       setSaving(false);
     }
@@ -211,7 +211,7 @@ export default function SubscriptionItem({ subscription, onUpdate, onDelete, onP
   const handleDeletePress = () => {
     showCrossPlatformAlert(
       'Xác nhận xóa',
-      `Bạn có chắc chắn muốn xóa khoảng trả hàng tháng "${subscription.name}"?`,
+      `Bạn có chắc chắn muốn xóa khoản trả hàng tháng "${subscription.name}"?`,
       [
         { text: 'Hủy', style: 'cancel' },
         { 
@@ -229,16 +229,16 @@ export default function SubscriptionItem({ subscription, onUpdate, onDelete, onP
       const success = await deleteSubscription(subscription.id);
       
       if (success) {
-        showCrossPlatformAlert('Thành công', 'Khoảng trả đã được xóa');
+        showCrossPlatformAlert('Thành công', 'Khoản trả đã được xóa');
         if (onDelete) {
           onDelete();
         }
       } else {
-        showCrossPlatformAlert('Lỗi', 'Không thể xóa khoảng trả hàng tháng');
+        showCrossPlatformAlert('Lỗi', 'Không thể xóa khoản trả hàng tháng');
       }
     } catch (error) {
       console.error('Delete subscription error:', error);
-      showCrossPlatformAlert('Lỗi', 'Không thể xóa khoảng trả hàng tháng');
+      showCrossPlatformAlert('Lỗi', 'Không thể xóa khoản trả hàng tháng');
     } finally {
       setDeleting(false);
     }
@@ -353,7 +353,7 @@ export default function SubscriptionItem({ subscription, onUpdate, onDelete, onP
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Chỉnh sửa khoảng trả hàng tháng</Text>
+              <Text style={styles.modalTitle}>Chỉnh sửa khoản trả hàng tháng</Text>
               <View style={styles.headerActions}>
                 <Pressable 
                   onPress={handleDeletePress} 
@@ -374,12 +374,12 @@ export default function SubscriptionItem({ subscription, onUpdate, onDelete, onP
 
             <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Tên khoảng trả *</Text>
+                <Text style={styles.inputLabel}>Tên khoản trả *</Text>
                 <TextInput
                   style={styles.textInput}
                   value={editName}
                   onChangeText={setEditName}
-                  placeholder="Tên khoảng trả hàng tháng"
+                  placeholder="Tên khoản trả hàng tháng"
                 />
               </View>
 
@@ -436,8 +436,8 @@ export default function SubscriptionItem({ subscription, onUpdate, onDelete, onP
                 {/* Info text */}
                 <Text style={styles.durationInfoText}>
                   {isLimitedDuration 
-                    ? 'Khoảng trả sẽ kết thúc sau số tháng đã chỉ định'
-                    : 'Khoảng trả sẽ tiếp tục vô thời hạn'
+                    ? 'Khoản trả sẽ kết thúc sau số tháng đã chỉ định'
+                    : 'Khoản trả sẽ tiếp tục vô thời hạn'
                   }
                 </Text>
               </View>
