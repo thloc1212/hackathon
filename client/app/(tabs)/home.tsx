@@ -1723,7 +1723,7 @@ const dashboardStyles = StyleSheet.create({
     backgroundColor: 'white',
     borderRadius: 20,
     marginHorizontal: 20,
-    height: '60%',
+    height: '70%',
     width: '90%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
