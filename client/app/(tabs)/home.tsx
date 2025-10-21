@@ -14,10 +14,8 @@ import {
   Modal,
   RefreshControl
 } from 'react-native';
-import {
-  ExpoSpeechRecognitionModule,
-  useSpeechRecognitionEvent,
-} from 'expo-speech-recognition';
+import Constants from 'expo-constants';
+// Removed static imports from expo-modules-core to avoid type/name conflicts and Expo Go issues
 
 // Cross-platform alert function
 const showCrossPlatformAlert = (title: string, message: string, buttons: Array<{text: string, onPress?: () => void, style?: 'default' | 'cancel' | 'destructive'}> = [{text: 'OK'}]) => {
@@ -99,6 +97,15 @@ export default function HomeScreen() {
   // Reference for speech recognition
   type SpeechRecognition = any;
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const nativeSpeechModuleRef = useRef<any>(null);
+  const nativeEmitterRef = useRef<any>(null); // emitter instance from expo-modules-core created dynamically
+  const nativeSubsRef = useRef<any[]>([]); // store listener subscriptions
+  const isRecordingRef = useRef<boolean>(false);
+  const [androidSpeechAvailable, setAndroidSpeechAvailable] = useState<boolean>(false);
+
+  const canUseNativeSpeech = () => Platform.OS !== 'web' && Constants.appOwnership !== 'expo';
+  const isExpoGo = Constants.appOwnership === 'expo';
+  const voiceSupported = Platform.OS === 'web' || canUseNativeSpeech();
   
   // Database context for centralized data management
   const {
@@ -133,49 +140,8 @@ export default function HomeScreen() {
     parseTest
   } = useApi();
   
-    // Mobile speech recognition event handlers
-    useSpeechRecognitionEvent('result', (event) => {
-      if (Platform.OS !== 'web') {
-        const transcript = event.results[0]?.transcript || '';
-        if (transcript) {
-          setVoiceTranscript(prev => prev + transcript + ' ');
-          setVoiceStatus(`Đang nghe: ${transcript}`);
-        }
-      }
-    });
-  
-    useSpeechRecognitionEvent('error', (event) => {
-      if (Platform.OS !== 'web') {
-        console.error('Mobile speech recognition error:', event.error);
-        setVoiceError(`Lỗi nhận dạng giọng nói: ${event.error}`);
-        setIsRecording(false);
-      
-          if (event.error === 'service-not-allowed' || event.error === 'audio-capture') {
-          showCrossPlatformAlert(
-            'Quyền truy cập bị từ chối',
-            'Bạn cần cấp quyền microphone để sử dụng tính năng nhận dạng giọng nói. Vui lòng vào Cài đặt > Ứng dụng > Finaice > Quyền và bật Microphone.',
-            [{ text: 'OK' }]
-          );
-        }
-      }
-    });
-  
-    useSpeechRecognitionEvent('end', () => {
-      if (Platform.OS !== 'web' && isRecording) {
-        // Restart recognition if still in recording mode
-        try {
-          ExpoSpeechRecognitionModule.start({
-            lang: 'vi-VN',
-            interimResults: true,
-            maxAlternatives: 1,
-            continuous: true,
-          });
-        } catch (e) {
-          console.error('Failed to restart mobile recognition:', e);
-          setIsRecording(false);
-        }
-      }
-    });
+  // Mobile speech recognition via expo-speech-recognition is disabled in Expo Go.
+  // Web speech recognition is still supported below using the Web Speech API.
   
   // Toggle voice recording
   const toggleRecording = async () => {
@@ -183,6 +149,7 @@ export default function HomeScreen() {
       // Stop recording and process
       setIsRecording(false);
       setVoiceStatus('');
+      isRecordingRef.current = false;
       
       // Stop recognition based on platform
       if (Platform.OS === 'web' && recognitionRef.current) {
@@ -195,9 +162,17 @@ export default function HomeScreen() {
         }
       } else if (Platform.OS !== 'web') {
         try {
-          await ExpoSpeechRecognitionModule.stop();
+          if (nativeSpeechModuleRef.current?.stop) {
+            await nativeSpeechModuleRef.current.stop();
+          }
         } catch (e) {
-          console.error('Error stopping mobile recognition:', e);
+          console.log('Error stopping native recognition (ignored):', e);
+        } finally {
+          // Clean up native listeners
+          if (nativeSubsRef.current.length) {
+            nativeSubsRef.current.forEach(sub => sub?.remove?.());
+            nativeSubsRef.current = [];
+          }
         }
       }
       
@@ -214,13 +189,38 @@ export default function HomeScreen() {
       setVoiceTranscript('');
       setVoiceError('');
       setVoiceStatus('Đang lắng nghe...');
+      isRecordingRef.current = true;
       
       // Start recognition based on platform
       if (Platform.OS !== 'web') {
+        // On Expo Go (no native modules), silently no-op
+        if (!canUseNativeSpeech()) {
+          setIsRecording(false);
+          isRecordingRef.current = false;
+          setVoiceStatus('');
+          return;
+        }
+        // ANDROID: dynamically load and use native module when available
         try {
-          const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-          if (!result.granted) {
+          if (!nativeSpeechModuleRef.current) {
+            if (!canUseNativeSpeech()) throw new Error('Native speech not available in Expo Go');
+            const m: any = await import('expo-speech-recognition');
+            nativeSpeechModuleRef.current = m?.ExpoSpeechRecognitionModule || null;
+            if (nativeSpeechModuleRef.current && !nativeEmitterRef.current) {
+              const core: any = await import('expo-modules-core');
+              nativeEmitterRef.current = new core.EventEmitter(nativeSpeechModuleRef.current);
+              setAndroidSpeechAvailable(Platform.OS === 'android');
+            }
+          }
+          if (!nativeSpeechModuleRef.current) {
+            throw new Error('Native speech module not available');
+          }
+
+          const perm = await nativeSpeechModuleRef.current.requestPermissionsAsync();
+          if (!perm?.granted) {
             setIsRecording(false);
+            isRecordingRef.current = false;
+            setVoiceStatus('');
             showCrossPlatformAlert(
               'Cần quyền truy cập',
               'Bạn cần cấp quyền microphone để sử dụng tính năng nhận dạng giọng nói.',
@@ -228,17 +228,68 @@ export default function HomeScreen() {
             );
             return;
           }
-          
-          await ExpoSpeechRecognitionModule.start({
+
+          // Attach listeners
+          if (nativeEmitterRef.current) {
+            // Clear previous
+            nativeSubsRef.current.forEach(s => s?.remove?.());
+            nativeSubsRef.current = [];
+            
+            const subResult = nativeEmitterRef.current.addListener('result', (event: any) => {
+              const transcript = event?.results?.[0]?.transcript || '';
+              if (transcript) {
+                setVoiceTranscript(prev => prev + transcript + ' ');
+                setVoiceStatus(`Đang nghe: ${transcript}`);
+              }
+            });
+            const subError = nativeEmitterRef.current.addListener('error', (event: any) => {
+              console.error('Mobile speech recognition error:', event?.error);
+              setVoiceError(`Lỗi nhận dạng giọng nói: ${event?.error}`);
+              setIsRecording(false);
+              isRecordingRef.current = false;
+            });
+            const subEnd = nativeEmitterRef.current.addListener('end', () => {
+              // Auto-restart if still recording
+              if (isRecordingRef.current) {
+                try {
+                  nativeSpeechModuleRef.current.start({
+                    lang: 'vi-VN',
+                    interimResults: true,
+                    maxAlternatives: 1,
+                    continuous: true,
+                  });
+                } catch (e) {
+                  console.error('Failed to restart mobile recognition:', e);
+                  setIsRecording(false);
+                  isRecordingRef.current = false;
+                }
+              }
+            });
+
+            nativeSubsRef.current.push(subResult, subError, subEnd);
+          }
+
+          // Start recognition
+          await nativeSpeechModuleRef.current.start({
             lang: 'vi-VN',
             interimResults: true,
             maxAlternatives: 1,
             continuous: true,
           });
         } catch (e) {
-          console.error('Error starting mobile recognition:', e);
+          if (!isExpoGo) {
+            console.warn('Android speech recognition not available or failed to start:', e);
+          }
           setIsRecording(false);
-          setVoiceError('Không thể bắt đầu nhận dạng giọng nói');
+          isRecordingRef.current = false;
+          setVoiceStatus('');
+          if (!isExpoGo) {
+            showCrossPlatformAlert(
+              'Tính năng chưa khả dụng',
+              'Để dùng nhận dạng giọng nói trên Android, hãy chạy app bằng Dev Client/EAS Build có cài expo-speech-recognition. Trên Expo Go, tính năng này không khả dụng.',
+              [{ text: 'OK' }]
+            );
+          }
         }
       }
     }
@@ -276,16 +327,27 @@ export default function HomeScreen() {
         
           setPermissionGranted(true);
         } else {
-          // For mobile (Android/iOS), check if speech recognition is available
+          // Try to detect native speech module availability (Android/iOS builds)
           try {
-            const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-            setPermissionGranted(result.granted);
-          
-            if (!result.granted) {
-              console.log('Speech recognition permission denied');
+            if (!canUseNativeSpeech()) {
+              setPermissionGranted(false);
+              return;
+            }
+            const m: any = await import('expo-speech-recognition');
+            if (m?.ExpoSpeechRecognitionModule) {
+              nativeSpeechModuleRef.current = m.ExpoSpeechRecognitionModule;
+              if (!nativeEmitterRef.current) {
+                const core: any = await import('expo-modules-core');
+                nativeEmitterRef.current = new core.EventEmitter(m.ExpoSpeechRecognitionModule);
+              }
+              setAndroidSpeechAvailable(Platform.OS === 'android');
+              // Permission will be requested when starting
+              setPermissionGranted(true);
+            } else {
+              setPermissionGranted(false);
             }
           } catch (error) {
-            console.error('Error requesting speech recognition permissions:', error);
+            // Not available in Expo Go
             setPermissionGranted(false);
           }
         }
@@ -308,12 +370,14 @@ export default function HomeScreen() {
           recognitionRef.current = null;
         }
         } else if (Platform.OS !== 'web') {
-          // Stop mobile speech recognition
+          // Stop and remove native listeners
           try {
-            ExpoSpeechRecognitionModule.stop();
-          } catch (e) {
-            console.log('Error stopping mobile recognition on unmount:', e);
-          }
+            if (nativeSpeechModuleRef.current?.stop) {
+              nativeSpeechModuleRef.current.stop();
+            }
+          } catch {}
+          nativeSubsRef.current.forEach(s => s?.remove?.());
+          nativeSubsRef.current = [];
       }
     };
   }, []);
@@ -944,9 +1008,11 @@ export default function HomeScreen() {
             <Pressable 
               style={[
                 dashboardStyles.voiceButton, 
-                isRecording && { backgroundColor: 'rgba(255, 61, 0, 0.1)', borderRadius: 20 }
+                isRecording && { backgroundColor: 'rgba(255, 61, 0, 0.1)', borderRadius: 20 },
+                !voiceSupported && { opacity: 0.5 }
               ]}
               onPress={toggleRecording}
+              disabled={!voiceSupported}
             >
               <Ionicons 
                 name={isRecording ? "radio" : "mic"} 
