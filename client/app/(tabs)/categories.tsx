@@ -249,8 +249,11 @@ const BudgetProgress = ({ categories }: { categories: SpendingCategory[] }) => {
           </View>
         </View>
       </View>
-      <View style={styles.progressCircle}>
-        <Svg height={160} width={160} viewBox={`0 0 ${radius * 2} ${radius * 2}`}>
+      
+      {/* Chart and Info Section */}
+      <View style={styles.chartInfoContainer}>
+        <View style={styles.progressCircle}>
+          <Svg height={160} width={160} viewBox={`0 0 ${radius * 2} ${radius * 2}`}>
           {/* Vẽ các phần chi tiêu */}
           {sortedCategories.map((category, index) => {
             const { startAngle, segmentAngle } = category;
@@ -271,12 +274,15 @@ const BudgetProgress = ({ categories }: { categories: SpendingCategory[] }) => {
             const isHovered = hoveredSegment === category.id;
             const isHighlighted = isSelected || isHovered;
             
+            // Darken other segments when one is highlighted
+            const shouldDarken = (selectedSegment || hoveredSegment) && !isHighlighted;
+            
             const PathComponent = (
               <Path
                 key={category.id}
                 d={pathData}
                 fill={category.color}
-                opacity={isHighlighted ? 1 : 0.8}
+                opacity={shouldDarken ? 0.3 : 0.9}
                 onPress={() => handleSegmentPress(category.id)}
                 onPressIn={() => handleSegmentPress(category.id)}
               />
@@ -317,49 +323,31 @@ const BudgetProgress = ({ categories }: { categories: SpendingCategory[] }) => {
             stroke="#5F58C210"
             strokeWidth={4}
           />
-          
-          {/* Display category name and percentage in center */}
-          {displayedCategory && (
-            <G>
-              <SvgText
-                x={radius}
-                y={radius - 8}
-                fontSize="14"
-                fontWeight="600"
-                fill="#333"
-                textAnchor="middle"
-                fontFamily={FontFamily.semiBold}
-              >
-                {displayedCategory.name}
-              </SvgText>
-              <SvgText
-                x={radius}
-                y={radius + 10}
-                fontSize="18"
-                fontWeight="700"
-                fill={displayedCategory.color}
-                textAnchor="middle"
-                fontFamily={FontFamily.bold}
-              >
-                {displayedCategory.spentPercentage.toFixed(1)}%
-              </SvgText>
-            </G>
-          )}
         </Svg>
       </View>
       
-      {/* Tooltip below the chart */}
-      {displayedCategory && (
-        <Animated.View style={[styles.tooltip, { opacity: tooltipOpacity }]}>
-          <View style={[styles.tooltipDot, { backgroundColor: displayedCategory.color }]} />
-          <View style={styles.tooltipContent}>
-            <ThemedText style={styles.tooltipCategory}>{displayedCategory.name}</ThemedText>
-            <ThemedText style={styles.tooltipPercentage}>
-              {displayedCategory.spentPercentage.toFixed(1)}% ({formatCurrency(displayedCategory.spent)})
+      {/* Tooltip on the right side */}
+      {displayedCategory ? (
+        <View style={styles.infoPanel}>
+          <View style={[styles.infoDot, { backgroundColor: displayedCategory.color }]} />
+          <View style={styles.infoContent}>
+            <ThemedText style={styles.infoCategory}>{displayedCategory.name}</ThemedText>
+            <ThemedText style={styles.infoPercentage}>
+              {displayedCategory.spentPercentage.toFixed(1)}%
+            </ThemedText>
+            <ThemedText style={styles.infoAmount}>
+              {formatCurrency(displayedCategory.spent)}
             </ThemedText>
           </View>
-        </Animated.View>
+        </View>
+      ) : (
+        <View style={styles.infoPanel}>
+          <ThemedText style={styles.infoPlaceholder}>
+            Chạm vào biểu đồ để xem chi tiết
+          </ThemedText>
+        </View>
       )}
+      </View>
     </View>
   );
 };
@@ -952,8 +940,63 @@ const styles = StyleSheet.create({
     height: 160,
     alignItems: 'center',
     justifyContent: 'center',
-    alignSelf: 'center',
-    marginTop: 16,
+  },
+  chartInfoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  infoPanel: {
+    flex: 1,
+    marginLeft: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: 100,
+  },
+  infoDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  infoContent: {
+    gap: 6,
+    alignItems: 'center',
+  },
+  infoCategory: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+    fontFamily: FontFamily.semiBold,
+    textAlign: 'center',
+  },
+  infoPercentage: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#5F58C2',
+    fontFamily: FontFamily.bold,
+    textAlign: 'center',
+  },
+  infoAmount: {
+    fontSize: 16,
+    color: '#666',
+    fontFamily: FontFamily.medium,
+    textAlign: 'center',
+  },
+  infoPlaceholder: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
+    fontStyle: 'italic',
+    fontFamily: FontFamily.regular,
   },
   tooltip: {
     flexDirection: 'row',
