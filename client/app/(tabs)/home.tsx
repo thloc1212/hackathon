@@ -357,6 +357,7 @@ export default function HomeScreen() {
         console.log('[home] ✅ INSTALLMENT PLAN detected with confidence:', subscriptionDetection.confidence);
         
         // Create installment data for modal
+        const paidAmount = subscriptionDetection.paidAmount || 0;
         const installmentInfo = {
           subscriptionData: {
             name: subscriptionDetection.subscriptionName || 'Khoản trả góp',
@@ -369,18 +370,19 @@ export default function HomeScreen() {
             currentMonth: 0, // Starting at month 0
             paidAmount: 0 // No installment payment made yet
           },
-          upfrontTransaction: {
-            amount: subscriptionDetection.paidAmount || 0,
+          upfrontTransaction: paidAmount > 0 ? {
+            amount: paidAmount,
             category: subscriptionDetection.category || 'Khác',
             description: `${subscriptionDetection.subscriptionName} - Trả trước`,
             date: new Date().toISOString().split('T')[0],
             type: 'expense' as const,
             merchant: subscriptionDetection.subscriptionName || 'Trả góp',
             items: []
-          },
+          } : null,
           totalAmount: subscriptionDetection.totalAmount,
-          paidAmount: subscriptionDetection.paidAmount,
-          remainingAmount: subscriptionDetection.remainingAmount
+          paidAmount: paidAmount,
+          remainingAmount: subscriptionDetection.remainingAmount,
+          hasUpfrontPayment: paidAmount > 0
         };
         
         setInstallmentData(installmentInfo);
@@ -594,21 +596,26 @@ export default function HomeScreen() {
       const subscriptionSuccess = await addSubscriptionToDb(installmentData.subscriptionData);
       
       if (subscriptionSuccess) {
-        // Create upfront payment transaction
-        const transactionSuccess = await addTransactionToDb(installmentData.upfrontTransaction);
+        let successMessage = `Đã tạo khoản trả hàng tháng "${installmentData.subscriptionData.name}" với ${installmentData.subscriptionData.totalMonths} tháng (${formatCurrency(installmentData.subscriptionData.pricePerMonth)}/tháng)`;
         
-        if (transactionSuccess) {
-          showCrossPlatformAlert(
-            'Tạo thành công!', 
-            `Đã tạo khoản trả hàng tháng "${installmentData.subscriptionData.name}" với ${installmentData.subscriptionData.totalMonths} tháng (${formatCurrency(installmentData.subscriptionData.pricePerMonth)}/tháng) và ghi nhận khoản trả trước ${formatCurrency(installmentData.upfrontTransaction.amount)}.`
-          );
-          setOcrText('');
-          setShowInstallmentModal(false);
-          setInstallmentData(null);
-          await refreshData();
+        // Create upfront payment transaction only if there's a prepaid amount
+        if (installmentData.hasUpfrontPayment && installmentData.upfrontTransaction) {
+          const transactionSuccess = await addTransactionToDb(installmentData.upfrontTransaction);
+          
+          if (transactionSuccess) {
+            successMessage += ` và ghi nhận khoản trả trước ${formatCurrency(installmentData.upfrontTransaction.amount)}.`;
+          } else {
+            successMessage += '. Không thể ghi nhận giao dịch trả trước.';
+          }
         } else {
-          showCrossPlatformAlert('Lỗi', 'Đã tạo khoản trả hàng tháng (không trả trước)');
+          successMessage += ' (không có khoản trả trước).';
         }
+        
+        showCrossPlatformAlert('Tạo thành công!', successMessage);
+        setOcrText('');
+        setShowInstallmentModal(false);
+        setInstallmentData(null);
+        await refreshData();
       } else {
         showCrossPlatformAlert('Lỗi', 'Không thể tạo khoản trả hàng tháng');
       }
@@ -1269,24 +1276,32 @@ export default function HomeScreen() {
 
                   {/* Details */}
                   <View style={dashboardStyles.installmentDetails}>
-                    <View style={dashboardStyles.detailRow}>
-                      <Text style={dashboardStyles.detailLabel}>Tổng giá trị:</Text>
-                      <Text style={dashboardStyles.detailValue}>
-                        {formatCurrency(installmentData.totalAmount || 0)}
-                      </Text>
-                    </View>
-                    <View style={dashboardStyles.detailRow}>
-                      <Text style={dashboardStyles.detailLabel}>Đã trả trước:</Text>
-                      <Text style={[dashboardStyles.detailValue, { color: '#059669' }]}>
-                        {formatCurrency(installmentData.upfrontTransaction.amount)}
-                      </Text>
-                    </View>
-                    <View style={dashboardStyles.detailRow}>
-                      <Text style={dashboardStyles.detailLabel}>Còn lại:</Text>
-                      <Text style={[dashboardStyles.detailValue, { color: '#dc2626' }]}>
-                        {formatCurrency(installmentData.remainingAmount || 0)}
-                      </Text>
-                    </View>
+                    {installmentData.totalAmount && (
+                      <View style={dashboardStyles.detailRow}>
+                        <Text style={dashboardStyles.detailLabel}>Tổng giá trị:</Text>
+                        <Text style={dashboardStyles.detailValue}>
+                          {formatCurrency(installmentData.totalAmount)}
+                        </Text>
+                      </View>
+                    )}
+                    {installmentData.hasUpfrontPayment && (
+                      <>
+                        <View style={dashboardStyles.detailRow}>
+                          <Text style={dashboardStyles.detailLabel}>Đã trả trước:</Text>
+                          <Text style={[dashboardStyles.detailValue, { color: '#059669' }]}>
+                            {formatCurrency(installmentData.paidAmount)}
+                          </Text>
+                        </View>
+                        {installmentData.remainingAmount && (
+                          <View style={dashboardStyles.detailRow}>
+                            <Text style={dashboardStyles.detailLabel}>Còn lại:</Text>
+                            <Text style={[dashboardStyles.detailValue, { color: '#dc2626' }]}>
+                              {formatCurrency(installmentData.remainingAmount)}
+                            </Text>
+                          </View>
+                        )}
+                      </>
+                    )}
                     <View style={dashboardStyles.detailRow}>
                       <Text style={dashboardStyles.detailLabel}>Thời gian:</Text>
                       <Text style={dashboardStyles.detailValue}>
@@ -1311,12 +1326,22 @@ export default function HomeScreen() {
                           Khoản trả hàng tháng: {installmentData.subscriptionData.name}
                         </Text>
                       </View>
-                      <View style={dashboardStyles.willCreateItem}>
-                        <Ionicons name="receipt-outline" size={20} color="#059669" />
-                        <Text style={dashboardStyles.willCreateText}>
-                          Giao dịch trả trước: {formatCurrency(installmentData.upfrontTransaction.amount)}
-                        </Text>
-                      </View>
+                      {installmentData.hasUpfrontPayment && installmentData.upfrontTransaction && (
+                        <View style={dashboardStyles.willCreateItem}>
+                          <Ionicons name="receipt-outline" size={20} color="#059669" />
+                          <Text style={dashboardStyles.willCreateText}>
+                            Giao dịch trả trước: {formatCurrency(installmentData.upfrontTransaction.amount)}
+                          </Text>
+                        </View>
+                      )}
+                      {!installmentData.hasUpfrontPayment && (
+                        <View style={dashboardStyles.willCreateItem}>
+                          <Ionicons name="information-circle-outline" size={20} color="#64748b" />
+                          <Text style={dashboardStyles.willCreateText}>
+                            Không có khoản trả trước
+                          </Text>
+                        </View>
+                      )}
                     </View>
                   </View>
                 </View>

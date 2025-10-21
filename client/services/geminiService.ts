@@ -147,7 +147,7 @@ const subscriptionSchema = {
     },
     paidAmount: {
       type: Type.NUMBER,
-      description: "Amount already paid upfront for installment plans.",
+      description: "Amount already paid upfront for installment plans. Can be 0 if no upfront payment.",
     },
     remainingAmount: {
       type: Type.NUMBER,
@@ -183,7 +183,9 @@ Text: "${inputText}"${subscriptionContext}
 
 🔵 KẾ HOẠCH TRẢ GÓP (isInstallmentPlan=true):
 - "laptop mới, đã trả 1tr, phải trả 13tr trong 12 tháng"
+- "điện thoại mới, trả góp 12 tháng, 2tr/tháng" (không cần trả trước)
 - Pattern: "[Sản phẩm], đã trả [số tiền], còn [số tiền] [thời gian] tháng"
+- OR: "[Sản phẩm], trả góp [thời gian] tháng, [số tiền]/tháng"
 
 ⚫ KHÁC (tất cả false):
 - Hóa đơn mua sắm, giao dịch thường
