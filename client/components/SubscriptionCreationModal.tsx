@@ -95,7 +95,7 @@ export default function SubscriptionCreationModal({
 
   const handleConfirm = () => {
     if (!name.trim()) {
-      showCrossPlatformAlert('Lỗi', 'Vui lòng nhập tên khoảng trả');
+      showCrossPlatformAlert('Lỗi', 'Vui lòng nhập tên khoản trả');
       return;
     }
     
@@ -167,8 +167,8 @@ export default function SubscriptionCreationModal({
             {/* Header */}
             <View style={styles.modalHeader}>
               <View style={styles.headerLeft}>
-                <Text style={styles.modalTitle}>Tạo khoảng trả hàng tháng mới</Text>
-                <Text style={styles.modalSubtitle}>Thêm khoảng trả định kỳ</Text>
+                <Text style={styles.modalTitle}>Tạo khoản trả hàng tháng mới</Text>
+                <Text style={styles.modalSubtitle}>Thêm khoản trả định kỳ</Text>
               </View>
               <TouchableOpacity onPress={onClose} disabled={isLoading} style={styles.closeButton}>
                 <Ionicons name="close" size={24} color="#6B46C1" />
@@ -178,7 +178,7 @@ export default function SubscriptionCreationModal({
             <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
               {/* Service Name */}
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Tên khoảng trả *</Text>
+                <Text style={styles.inputLabel}>Tên khoản trả *</Text>
                 <TextInput
                   style={styles.textInput}
                   value={name}
@@ -245,8 +245,8 @@ export default function SubscriptionCreationModal({
                 {/* Info text */}
                 <Text style={styles.durationInfoText}>
                   {isLimitedDuration 
-                    ? 'Khoảng trả sẽ kết thúc sau số tháng đã chỉ định'
-                    : 'Khoảng trả sẽ tiếp tục vô thời hạn'
+                    ? 'Khoản trả sẽ kết thúc sau số tháng đã chỉ định'
+                    : 'Khoản trả sẽ tiếp tục vô thời hạn'
                   }
                 </Text>
               </View>
@@ -334,7 +334,7 @@ export default function SubscriptionCreationModal({
                   style={styles.textArea}
                   value={description}
                   onChangeText={setDescription}
-                  placeholder="Thêm mô tả cho khoảng trả này..."
+                  placeholder="Thêm mô tả cho khoản trả này..."
                   placeholderTextColor="#9CA3AF"
                   multiline
                   numberOfLines={2}
@@ -348,8 +348,8 @@ export default function SubscriptionCreationModal({
                   <Ionicons name="information-circle-outline" size={18} color="#6B46C1" />
                   <Text style={styles.infoText}>
                     {isLimitedDuration && totalMonths 
-                      ? `Khoảng trả ${totalMonths} tháng` 
-                      : 'Khoảng trả không giới hạn thời gian'}
+                      ? `Khoản trả ${totalMonths} tháng` 
+                      : 'Khoản trả không giới hạn thời gian'}
                   </Text>
                 </View>
                 <View style={styles.infoRow}>
@@ -379,7 +379,7 @@ export default function SubscriptionCreationModal({
                 {isLoading ? (
                   <ActivityIndicator size="small" color="white" />
                 ) : (
-                  <Text style={styles.confirmButtonText}>Tạo khoảng trả</Text>
+                  <Text style={styles.confirmButtonText}>Tạo khoản trả</Text>
                 )}
               </TouchableOpacity>
             </View>
