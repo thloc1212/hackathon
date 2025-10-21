@@ -1492,23 +1492,46 @@ app.post('/insight', async (req, res) => {
       return res.status(400).json({ error: 'category required' });
     }
 
-    const prompt = `You are a friendly personal finance assistant. Given the top spending category: ${category}, the amount spent: ${spent}, the share percentage: ${percentage} and total spent: ${totalSpent}, provide a short actionable saving tip in Vietnamese (2-3 sentences) and include a suggested monthly saving amount as a number. Return only plain text.`;
+    const prompt = `Bạn là trợ lý tài chính thân thiện. Với thông tin chi tiêu cao nhất:
+- Danh mục: ${category}
+- Số tiền: ${spent} VND
+- Tỷ lệ: ${percentage}%
+- Tổng chi tiêu: ${totalSpent} VND
 
-    const response = await ai.models.generateContent({
+Hãy đưa ra lời khuyên tiết kiệm ngắn gọn (2-3 câu) bằng tiếng Việt và gợi ý số tiền tiết kiệm hàng tháng.`;
+
+    console.log('[/insight] Calling Gemini API with category:', category);
+
+    const genResponse = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      config: {
-        responseMimeType: 'text/plain',
-      },
     });
 
-    // Prefer response.text, fallback to parsed
-    const insightText = response?.text || (response?.parsed && JSON.stringify(response.parsed)) || 'No insight available';
+    // The @google/genai SDK returns a response with a text property
+    // Extract text from the response
+    let insightText = 'Không thể tải mẹo tiết kiệm thông minh.';
+    
+    if (genResponse && genResponse.text) {
+      insightText = genResponse.text;
+      console.log('[/insight] Successfully extracted insight text');
+    } else {
+      console.error('[/insight] Unexpected response structure:', JSON.stringify(genResponse, null, 2));
+      throw new Error('Invalid response structure from Gemini API');
+    }
 
-    res.json({ insight: insightText });
+    console.log('[/insight] Final insight text:', insightText);
+
+    res.json({ 
+      insight: insightText 
+    });
   } catch (err) {
-    console.error('Error in /insight handler:', err);
-    res.status(500).json({ error: 'Insight generation failed', detail: err?.message ?? String(err) });
+    console.error('[/insight] Error in insight handler:', err);
+    console.error('[/insight] Error stack:', err.stack);
+    res.status(500).json({ 
+      success: false,
+      error: 'Insight generation failed', 
+      detail: err?.message ?? String(err) 
+    });
   }
 });
 
