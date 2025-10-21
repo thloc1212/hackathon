@@ -1,9 +1,33 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, Modal, TextInput, Alert, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Modal, TextInput, Alert, ScrollView, ActivityIndicator, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, FontFamily, FontWeight } from '@/constants/theme';
 import { Transaction } from '@/types';
-import { useApi } from '@/hooks/useApi';
+import { useDatabase } from '@/hooks/useDatabase';
+
+// Cross-platform alert function
+const showCrossPlatformAlert = (title: string, message: string, buttons: Array<{text: string, onPress?: () => void, style?: 'default' | 'cancel' | 'destructive'}> = [{text: 'OK'}]) => {
+  if (Platform.OS === 'web') {
+    // For web/desktop users
+    const buttonText = buttons.map(btn => btn.text).join(' / ');
+    const result = window.confirm(`${title}\n\n${message}\n\n(${buttonText})`);
+    
+    if (result && buttons[1]?.onPress) {
+      buttons[1].onPress();
+    } else if (!result && buttons[0]?.onPress) {
+      buttons[0].onPress();
+    } else if (!result && buttons[0]?.onPress) {
+      buttons[0].onPress();
+    }
+  } else {
+    // For mobile app users (iOS/Android)
+    Alert.alert(title, message, buttons.map(btn => ({
+      text: btn.text,
+      onPress: btn.onPress,
+      style: btn.style,
+    })), { cancelable: false });
+  }
+};
 
 const CATEGORIES = [
   'Thu nhập',
@@ -19,7 +43,7 @@ const CATEGORIES = [
 interface TransactionItemProps {
   transaction: Transaction;
   colorScheme?: 'light' | 'dark';
-  onTransactionUpdate?: (updatedTransaction: Transaction) => void;
+  onTransactionUpdate?: () => void;
 }
 
 export default function TransactionItem({ transaction, colorScheme = 'light', onTransactionUpdate }: TransactionItemProps) {
@@ -36,8 +60,9 @@ export default function TransactionItem({ transaction, colorScheme = 'light', on
   const [editCategory, setEditCategory] = useState(transaction.category);
   const [saving, setSaving] = useState(false);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   
-  const { updateTransaction } = useApi();
+  const { updateTransaction, deleteTransaction } = useDatabase();
   
   const formatAmount = (amount: number) => {
     const formattedAmount = Math.abs(amount).toLocaleString('vi-VN');
@@ -53,13 +78,13 @@ export default function TransactionItem({ transaction, colorScheme = 'light', on
 
   const handleSave = async () => {
     if (!editDescription.trim() || !editAmount.trim() || !editCategory.trim()) {
-      Alert.alert('Lỗi', 'Vui lòng điền đầy đủ thông tin');
+      showCrossPlatformAlert('Lỗi', 'Vui lòng điền đầy đủ thông tin');
       return;
     }
 
     const amount = parseFloat(editAmount);
     if (isNaN(amount) || amount <= 0) {
-      Alert.alert('Lỗi', 'Vui lòng nhập số tiền hợp lệ');
+      showCrossPlatformAlert('Lỗi', 'Vui lòng nhập số tiền hợp lệ');
       return;
     }
 
@@ -71,21 +96,22 @@ export default function TransactionItem({ transaction, colorScheme = 'light', on
         category: editCategory.trim(),
       };
 
-      const response = await updateTransaction(transaction.id, updateData);
+      const success = await updateTransaction(transaction.id, updateData);
       
-      if (response.success && response.data) {
-        Alert.alert('Thành công', 'Giao dịch đã được cập nhật thành công');
+      if (success) {
+        showCrossPlatformAlert('Thành công', 'Giao dịch đã được cập nhật thành công');
         setShowEditModal(false);
         
         if (onTransactionUpdate) {
-          onTransactionUpdate(response.data);
+          // Trigger refresh in parent component
+          onTransactionUpdate();
         }
       } else {
-        Alert.alert('Lỗi', response.error || 'Không thể cập nhật giao dịch');
+        showCrossPlatformAlert('Lỗi', 'Không thể cập nhật giao dịch');
       }
     } catch (error) {
       console.error('Update transaction error:', error);
-      Alert.alert('Lỗi', 'Không thể cập nhật giao dịch');
+      showCrossPlatformAlert('Lỗi', 'Không thể cập nhật giao dịch');
     } finally {
       setSaving(false);
     }
@@ -102,6 +128,44 @@ export default function TransactionItem({ transaction, colorScheme = 'light', on
   const handleCategorySelect = (category: string) => {
     setEditCategory(category);
     setShowCategoryDropdown(false);
+  };
+
+  const handleDelete = () => {
+    showCrossPlatformAlert(
+      'Xác nhận xóa',
+      `Bạn có chắc chắn muốn xóa giao dịch "${transaction.description}"?`,
+      [
+        { text: 'Hủy', style: 'cancel' },
+        { 
+          text: 'Xóa', 
+          style: 'destructive',
+          onPress: () => processDelete()
+        },
+      ]
+    );
+  };
+
+  const processDelete = async () => {
+    setDeleting(true);
+    try {
+      const success = await deleteTransaction(transaction.id);
+      
+      if (success) {
+        showCrossPlatformAlert('Thành công', 'Giao dịch đã được xóa');
+        setShowEditModal(false);
+        // Trigger refresh in parent component
+        if (onTransactionUpdate) {
+          onTransactionUpdate();
+        }
+      } else {
+        showCrossPlatformAlert('Lỗi', 'Không thể xóa giao dịch');
+      }
+    } catch (error) {
+      console.error('Delete transaction error:', error);
+      showCrossPlatformAlert('Lỗi', 'Không thể xóa giao dịch');
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
@@ -146,9 +210,22 @@ export default function TransactionItem({ transaction, colorScheme = 'light', on
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Chỉnh sửa giao dịch</Text>
-              <Pressable onPress={handleCancel} style={styles.closeButton}>
-                <Ionicons name="close" size={24} color="#666" />
-              </Pressable>
+              <View style={styles.headerActions}>
+                <Pressable 
+                  onPress={handleDelete} 
+                  style={[styles.deleteButton, deleting && { opacity: 0.6 }]}
+                  disabled={deleting}
+                >
+                  {deleting ? (
+                    <ActivityIndicator size="small" color="#ef4444" />
+                  ) : (
+                    <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                  )}
+                </Pressable>
+                <Pressable onPress={handleCancel} style={styles.closeButton}>
+                  <Ionicons name="close" size={24} color="#666" />
+                </Pressable>
+              </View>
             </View>
 
             <View style={styles.modalContent}>
@@ -175,17 +252,6 @@ export default function TransactionItem({ transaction, colorScheme = 'light', on
 
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Danh mục</Text>
-                <Pressable
-                  style={styles.dropdownButton}
-                  onPress={() => setShowCategoryDropdown(!showCategoryDropdown)}
-                >
-                  <Text style={styles.dropdownButtonText}>{editCategory}</Text>
-                  <Ionicons 
-                    name={showCategoryDropdown ? "chevron-up" : "chevron-down"} 
-                    size={20} 
-                    color="#666" 
-                  />
-                </Pressable>
                 
                 {showCategoryDropdown && (
                   <View style={styles.dropdown}>
@@ -213,6 +279,18 @@ export default function TransactionItem({ transaction, colorScheme = 'light', on
                     </ScrollView>
                   </View>
                 )}
+                
+                <Pressable
+                  style={styles.dropdownButton}
+                  onPress={() => setShowCategoryDropdown(!showCategoryDropdown)}
+                >
+                  <Text style={styles.dropdownButtonText}>{editCategory}</Text>
+                  <Ionicons 
+                    name={showCategoryDropdown ? "chevron-up" : "chevron-down"} 
+                    size={20} 
+                    color="#666" 
+                  />
+                </Pressable>
               </View>
             </View>
 
@@ -329,6 +407,14 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.bold,
     fontWeight: FontWeight.bold,
     color: '#1f2937',
+    flex: 1,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  deleteButton: {
+    padding: 4,
   },
   closeButton: {
     padding: 4,
@@ -409,10 +495,10 @@ const styles = StyleSheet.create({
   },
   dropdown: {
     position: 'absolute',
-    top: 90,
+    bottom: 70,
     left: 0,
     right: 0,
-    marginTop: 8,
+    marginBottom: 8,
     borderWidth: 1,
     borderColor: '#d1d5db',
     borderRadius: 12,

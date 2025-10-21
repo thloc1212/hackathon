@@ -76,7 +76,203 @@ const receiptSchema = {
 };
 
 // Import the ReceiptInfo type from the centralized types
-import { ReceiptInfo } from '@/types';
+import { ReceiptInfo, Subscription } from '@/types';
+
+interface SubscriptionDetectionResult {
+  isSubscriptionPayment: boolean;
+  isNewSubscription: boolean;
+  isInstallmentPlan: boolean; // New: for installment payment plans
+  subscriptionName?: string;
+  amount?: number;
+  category?: string;
+  description?: string;
+  duration?: number; // Duration in months extracted from text
+  confidence?: number; // Confidence level (0-100)
+  totalAmount?: number; // Total amount for installment plans
+  paidAmount?: number; // Amount already paid for installment plans
+  remainingAmount?: number; // Remaining amount to pay
+}
+
+const subscriptionSchema = {
+  type: Type.OBJECT,
+  properties: {
+    isSubscriptionPayment: {
+      type: Type.BOOLEAN,
+      description: "Whether the text indicates a payment for an existing subscription service THIS MONTH.",
+    },
+    isNewSubscription: {
+      type: Type.BOOLEAN,
+      description: "Whether the text indicates creating/setting up a NEW subscription service.",
+    },
+    isInstallmentPlan: {
+      type: Type.BOOLEAN,
+      description: "Whether the text indicates a payment plan where user pays some amount upfront and will pay remaining in monthly installments.",
+    },
+    subscriptionName: {
+      type: Type.STRING,
+      description: "The name of the subscription service or item being purchased on installment.",
+    },
+    amount: {
+      type: Type.NUMBER,
+      description: "The monthly amount to be paid for subscription or installment.",
+    },
+    category: {
+      type: Type.STRING,
+      description: "The category of the subscription service or installment item. Choose the most appropriate one.",
+      enum: [
+        "Ăn uống",
+        "Di chuyển", 
+        "Mua sắm",
+        "Giải trí",
+        "Sức khỏe",
+        "Giáo dục",
+        "Khác",
+      ],
+    },
+    description: {
+      type: Type.STRING,
+      description: "A brief description of what this is for.",
+    },
+    duration: {
+      type: Type.NUMBER,
+      description: "Duration in months for subscription or installment plan.",
+    },
+    confidence: {
+      type: Type.NUMBER,
+      description: "Confidence level from 0-100 on how certain you are about the classification.",
+    },
+    totalAmount: {
+      type: Type.NUMBER,
+      description: "Total amount for installment plans (upfront + remaining).",
+    },
+    paidAmount: {
+      type: Type.NUMBER,
+      description: "Amount already paid upfront for installment plans.",
+    },
+    remainingAmount: {
+      type: Type.NUMBER,
+      description: "Remaining amount to be paid in installments.",
+    },
+  },
+  required: ["isSubscriptionPayment", "isNewSubscription", "isInstallmentPlan", "confidence"],
+};
+
+export async function detectSubscriptionPayment(inputText: string, activeSubscriptions: Subscription[] = []): Promise<SubscriptionDetectionResult> {
+  try {
+    // Build a list of active subscription names for context
+    const subscriptionNames = activeSubscriptions
+      .filter(sub => sub.isActive)
+      .map(sub => sub.name)
+      .join(', ');
+    
+    const subscriptionContext = activeSubscriptions.length > 0 
+      ? `\n\nKhoảng trả hàng tháng hiện tại: ${subscriptionNames}`
+      : '\n\nChưa có khoảng trả hàng tháng nào.';
+
+    const prompt = `Phân tích văn bản và xác định loại:
+
+Text: "${inputText}"${subscriptionContext}
+
+🔴 THANH TOÁN DV HÀNG THÁNG (isSubscriptionPayment=true):
+- CHỈ khi văn bản đề cập đến thanh toán cho MỘT TRONG CÁC DỊCH VỤ HIỆN TẠI: ${subscriptionNames || 'Không có'}
+- Ví dụ: "Netflix tháng này", "Spotify bill", "thanh toán tháng này"
+- QUAN TRỌNG: CHỈ trả về true nếu tên dịch vụ KHỚP với danh sách hiện tại
+
+🟢 TẠO DV HÀNG THÁNG MỚI (isNewSubscription=true):
+- "đăng ký Netflix 12 tháng", "gg one 50k/tháng, 12 tháng"
+- Format: "[Dịch vụ] [Giá]/tháng, [Thời gian] tháng"
+
+🔵 KẾ HOẠCH TRẢ GÓP (isInstallmentPlan=true):
+- "laptop mới, đã trả 1tr, phải trả 13tr trong 12 tháng"
+- Pattern: "[Sản phẩm], đã trả [số tiền], còn [số tiền] [thời gian] tháng"
+
+⚫ KHÁC (tất cả false):
+- Hóa đơn mua sắm, giao dịch thường
+
+Danh mục: "Ăn uống", "Di chuyển", "Mua sắm", "Giải trí", "Sức khỏe", "Giáo dục", "Khác"
+
+Trích xuất: tên, số tiền, thời gian, danh mục. Confidence 0-100.`;
+
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: subscriptionSchema,
+      },
+    });
+
+    const jsonText = response.text?.trim() || '';
+    console.log("[geminiService] Subscription detection response:", jsonText);
+    console.log("[geminiService] Input text was:", inputText);
+    
+    if (!jsonText) {
+      return { isSubscriptionPayment: false, isNewSubscription: false, isInstallmentPlan: false, confidence: 0 };
+    }
+    
+    const parsedData = JSON.parse(jsonText);
+    
+    // Fallback: Convert English categories to Vietnamese if AI still returns English
+    const categoryMap: Record<string, string> = {
+      'Food': 'Ăn uống',
+      'Transport': 'Di chuyển',
+      'Shopping': 'Mua sắm',
+      'Entertainment': 'Giải trí',
+      'Health': 'Sức khỏe',
+      'Education': 'Giáo dục',
+      'Other': 'Khác',
+      'Utilities': 'Khác'
+    };
+    
+    if (parsedData.category && categoryMap[parsedData.category]) {
+      console.warn(`[geminiService] Converting English category "${parsedData.category}" to Vietnamese "${categoryMap[parsedData.category]}"`);
+      parsedData.category = categoryMap[parsedData.category];
+    }
+    
+    // Add confidence filtering - if confidence is too low, default to no detection
+    const confidence = parsedData.confidence || 50;
+    if (confidence < 60) {
+      console.log(`[geminiService] Low confidence (${confidence}%), defaulting to no subscription detection`);
+      return { isSubscriptionPayment: false, isNewSubscription: false, isInstallmentPlan: false, confidence };
+    }
+    
+    // Additional validation for subscription payments - check if the detected name matches existing subscriptions
+    if (parsedData.isSubscriptionPayment) {
+      const detectedName = parsedData.subscriptionName?.toLowerCase() || '';
+      const hasMatchingSubscription = activeSubscriptions.some(sub => 
+        sub.isActive && (
+          sub.name.toLowerCase().includes(detectedName) || 
+          detectedName.includes(sub.name.toLowerCase())
+        )
+      );
+      
+      if (!hasMatchingSubscription && activeSubscriptions.length > 0) {
+        console.log(`[geminiService] No matching active subscription found for "${parsedData.subscriptionName}", treating as regular transaction`);
+        return { isSubscriptionPayment: false, isNewSubscription: false, isInstallmentPlan: false, confidence };
+      }
+    }
+    
+    return {
+      isSubscriptionPayment: parsedData.isSubscriptionPayment || false,
+      isNewSubscription: parsedData.isNewSubscription || false,
+      isInstallmentPlan: parsedData.isInstallmentPlan || false,
+      subscriptionName: parsedData.subscriptionName,
+      amount: parsedData.amount,
+      category: parsedData.category,
+      description: parsedData.description,
+      duration: parsedData.duration,
+      confidence: confidence,
+      totalAmount: parsedData.totalAmount,
+      paidAmount: parsedData.paidAmount,
+      remainingAmount: parsedData.remainingAmount,
+    };
+
+  } catch (error) {
+    console.error("Error detecting subscription payment:", error);
+    return { isSubscriptionPayment: false, isNewSubscription: false, isInstallmentPlan: false, confidence: 0 };
+  }
+}
 
 export async function parseReceipt(base64Image: string, mimeType: string): Promise<ReceiptInfo> {
   try {
