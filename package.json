@@ -20,6 +20,7 @@
     "express": "^5.1.0",
     "has-flag": "^5.0.1",
     "node-fetch": "^3.3.2",
+    "nodemailer": "^7.0.9",
     "uuid": "^13.0.0"
   },
   "devDependencies": {

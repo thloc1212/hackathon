@@ -19,7 +19,7 @@ export interface DatabaseContextType {
   error: string | null;
   
   // Actions
-  refreshData: () => Promise<void>;
+  refreshData: (month?: number | null, year?: number | null) => Promise<void>;
   addTransaction: (transaction: Omit<ApiTransaction, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) => Promise<boolean>;
   updateTransaction: (id: string, data: Partial<ApiTransaction>) => Promise<boolean>;
   deleteTransaction: (id: string) => Promise<boolean>;
@@ -46,6 +46,7 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children, us
   const [stats, setStats] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentFilter, setCurrentFilter] = useState<{ month: number | null; year: number | null }>({ month: null, year: null });
 
   const api = useApi();
 
@@ -92,7 +93,7 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children, us
     color: apiSubscription.color,
   });
 
-  const refreshData = async () => {
+  const refreshData = async (month?: number | null, year?: number | null) => {
     if (!user) {
       setTransactions([]);
       setSubscriptions([]);
@@ -100,12 +101,21 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children, us
       return;
     }
 
+    // Determine filter values to use
+    const filterMonth = month !== undefined ? month : null;
+    const filterYear = year !== undefined ? year : null;
+
+    console.log(`[useDatabase] refreshData called with:`, { month, year, filterMonth, filterYear });
+
+    // Update current filter
+    setCurrentFilter({ month: filterMonth, year: filterYear });
+
     try {
       setLoading(true);
       setError(null);
 
-      // Load transactions
-      const transactionsResponse = await api.getTransactions();
+      // Load transactions with filter
+      const transactionsResponse = await api.getTransactions(undefined, undefined, filterMonth, filterYear);
       
       if (transactionsResponse.success && transactionsResponse.data) {
         const apiTransactions = Array.isArray(transactionsResponse.data) 
@@ -133,9 +143,8 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children, us
         console.log('Failed to load subscriptions:', subscriptionsResponse.error);
         setSubscriptions([]);
       }
-
-      // Load stats  
-      const statsResponse = await api.getUserStats();
+      // Load stats with filter
+      const statsResponse = await api.getUserStats(filterMonth, filterYear);
       
       if (statsResponse.success && statsResponse.data) {
         setStats(statsResponse.data);
@@ -168,7 +177,7 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children, us
     try {
       const response = await api.addTransaction(transactionData);
       if (response.success) {
-        await refreshData(); // Refresh all data after adding
+        await refreshData(currentFilter.month, currentFilter.year); // Refresh with current filter
         return true;
       } else {
         setError(response.error || 'Failed to add transaction');
@@ -184,7 +193,7 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children, us
     try {
       const response = await api.updateTransaction(id, updateData);
       if (response.success) {
-        await refreshData(); // Refresh all data after updating
+        await refreshData(currentFilter.month, currentFilter.year); // Refresh with current filter
         return true;
       } else {
         setError(response.error || 'Failed to update transaction');
@@ -200,7 +209,7 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children, us
     try {
       const response = await api.deleteTransaction(id);
       if (response.success) {
-        await refreshData(); // Refresh all data after deleting
+        await refreshData(currentFilter.month, currentFilter.year); // Refresh with current filter
         return true;
       } else {
         setError(response.error || 'Failed to delete transaction');
@@ -262,7 +271,9 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children, us
 
   // Auto-refresh when user changes
   useEffect(() => {
-    refreshData();
+    if (user?.id) {
+      refreshData(); // Call without parameters for initial load
+    }
   }, [user?.id]);
 
   const contextValue: DatabaseContextType = {

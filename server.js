@@ -6,6 +6,7 @@ import os from "os";
 import { GoogleGenAI, Type } from "@google/genai";
 import bcrypt from "bcryptjs";
 import database from './lib/database.js';
+import emailService from './lib/emailService.js';
 
 dotenv.config();
 const app = express();
@@ -63,15 +64,15 @@ app.post('/parse-test', (req, res) => {
 
 // Authentication Routes
 
-// Sign Up
+// Sign Up (Passwordless - no password required)
 app.post('/auth/signup', async (req, res) => {
   try {
-    const { name, email, password, dateOfBirth } = req.body;
+    const { name, email, dateOfBirth } = req.body;
 
     // Validate required fields
-    if (!name || !email || !password) {
+    if (!name || !email) {
       return res.status(400).json({ 
-        error: 'Name, email, and password are required' 
+        error: 'Name and email are required' 
       });
     }
 
@@ -90,13 +91,6 @@ app.post('/auth/signup', async (req, res) => {
       });
     }
 
-    // Validate password length
-    if (password.length < 6) {
-      return res.status(400).json({ 
-        error: 'Password must be at least 6 characters long' 
-      });
-    }
-
     // Check if user already exists
     const existingUser = await database.findUserByEmail(email);
     if (existingUser) {
@@ -105,24 +99,17 @@ app.post('/auth/signup', async (req, res) => {
       });
     }
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Create user
+    // Create user without password
     const newUser = await database.createUser({
       name: name.trim(),
       email: email.toLowerCase().trim(),
-      password: hashedPassword,
       dateOfBirth: dateOfBirth || null
     });
 
-    // Remove password from response
-    const { password: _, ...userResponse } = newUser;
-
     res.status(201).json({
       success: true,
-      message: 'User created successfully',
-      user: userResponse
+      message: 'User created successfully. Please use the login page to request an OTP.',
+      user: newUser
     });
 
   } catch (error) {
@@ -134,33 +121,107 @@ app.post('/auth/signup', async (req, res) => {
   }
 });
 
-// Sign In
-app.post('/auth/signin', async (req, res) => {
+// Request OTP for Login
+app.post('/auth/request-otp', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email } = req.body;
 
-    // Validate required fields
-    if (!email || !password) {
+    // Validate email
+    if (!email) {
       return res.status(400).json({ 
-        error: 'Email and password are required' 
+        error: 'Email is required' 
       });
     }
 
-    // Find user by email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ 
+        error: 'Please enter a valid email address' 
+      });
+    }
+
+    // Check if user exists
     const user = await database.findUserByEmail(email);
     if (!user) {
-      return res.status(401).json({ 
-        error: 'Invalid email or password' 
+      return res.status(404).json({ 
+        error: 'No account found with this email. Please sign up first.' 
       });
     }
 
-    // Verify password
-    const isValidPassword = await bcrypt.compare(password, user.password);
-    if (!isValidPassword) {
-      return res.status(401).json({ 
-        error: 'Invalid email or password' 
+    // Generate OTP
+    const otp = emailService.generateOTP(8);
+
+    // Save OTP to database
+    await database.createOtp(email, otp);
+
+    // Send OTP via email
+    try {
+      await emailService.sendOTP(email, otp);
+      
+      res.json({
+        success: true,
+        message: 'OTP has been sent to your email. Please check your inbox.'
+      });
+    } catch (emailError) {
+      console.error('Email sending error:', emailError);
+      // Delete the OTP since email failed to send
+      const otpRecord = await database.findOtpByEmail(email);
+      if (otpRecord) {
+        await database.deleteOtp(otpRecord.id);
+      }
+      
+      return res.status(500).json({ 
+        error: 'Failed to send OTP email. Please check email configuration.',
+        detail: emailError.message 
       });
     }
+
+  } catch (error) {
+    console.error('Request OTP error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      detail: error.message 
+    });
+  }
+});
+
+// Verify OTP and Login
+app.post('/auth/verify-otp', async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    // Validate required fields
+    if (!email || !otp) {
+      return res.status(400).json({ 
+        error: 'Email and OTP are required' 
+      });
+    }
+
+    // Find OTP record
+    const otpRecord = await database.findOtpByEmail(email);
+    if (!otpRecord) {
+      return res.status(401).json({ 
+        error: 'Invalid or expired OTP. Please request a new one.' 
+      });
+    }
+
+    // Verify OTP (case-insensitive)
+    if (otpRecord.otp.toUpperCase() !== otp.toUpperCase().trim()) {
+      return res.status(401).json({ 
+        error: 'Invalid OTP. Please try again.' 
+      });
+    }
+
+    // Find user
+    const user = await database.findUserByEmail(email);
+    if (!user) {
+      return res.status(404).json({ 
+        error: 'User not found' 
+      });
+    }
+
+    // Delete used OTP
+    await database.deleteOtp(otpRecord.id);
 
     // Create session
     const sessionExpiry = new Date();
@@ -171,13 +232,10 @@ app.post('/auth/signin', async (req, res) => {
       expiresAt: sessionExpiry.toISOString()
     });
 
-    // Remove password from response
-    const { password: _, ...userResponse } = user;
-
     res.json({
       success: true,
-      message: 'Signed in successfully',
-      user: userResponse,
+      message: 'Login successful',
+      user: user,
       session: {
         id: session.id,
         expiresAt: session.expiresAt
@@ -185,12 +243,20 @@ app.post('/auth/signin', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Signin error:', error);
+    console.error('Verify OTP error:', error);
     res.status(500).json({ 
       error: 'Internal server error',
       detail: error.message 
     });
   }
+});
+
+// Sign In (DEPRECATED - use request-otp and verify-otp instead)
+app.post('/auth/signin', async (req, res) => {
+  return res.status(410).json({ 
+    error: 'Password-based login is no longer supported. Please use passwordless login with OTP.',
+    message: 'Use /auth/request-otp to receive an OTP, then /auth/verify-otp to login.'
+  });
 });
 
 // Sign Out
@@ -458,8 +524,13 @@ app.get('/transactions', verifySession, async (req, res) => {
   try {
     const limit = req.query.limit ? parseInt(req.query.limit) : null;
     const offset = req.query.offset ? parseInt(req.query.offset) : 0;
+    const month = req.query.month ? parseInt(req.query.month) : null;
+    const year = req.query.year ? parseInt(req.query.year) : null;
 
-    const transactions = await database.findTransactionsByUserId(req.user.id, limit, offset);
+    console.log('[GET /transactions] Raw query params:', req.query);
+    console.log('[GET /transactions] Parsed filter params:', { month, year, limit, offset });
+
+    const transactions = await database.findTransactionsByUserId(req.user.id, limit, offset, month, year);
 
     res.json({
       success: true,
@@ -479,7 +550,13 @@ app.get('/transactions', verifySession, async (req, res) => {
 // Get user transaction statistics
 app.get('/transactions/stats', verifySession, async (req, res) => {
   try {
-    const stats = await database.getUserTransactionStats(req.user.id);
+    const month = req.query.month ? parseInt(req.query.month) : null;
+    const year = req.query.year ? parseInt(req.query.year) : null;
+    
+    console.log('[GET /transactions/stats] Raw query params:', req.query);
+    console.log('[GET /transactions/stats] Parsed filter params:', { month, year });
+    
+    const stats = await database.getUserTransactionStats(req.user.id, month, year);
 
     res.json({
       success: true,

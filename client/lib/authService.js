@@ -27,7 +27,7 @@ class AuthService {
     this._listeners = [];
   }
 
-  async signup(name, email, password, dateOfBirth) {
+  async signup(name, email, dateOfBirth) {
     try {
       const response = await fetch(`${SERVER_URL}/auth/signup`, {
         method: 'POST',
@@ -37,7 +37,6 @@ class AuthService {
         body: JSON.stringify({
           name,
           email,
-          password,
           dateOfBirth,
         }),
       });
@@ -59,23 +58,51 @@ class AuthService {
     }
   }
 
-  async signin(email, password) {
+  async requestOTP(email) {
     try {
-      const response = await fetch(`${SERVER_URL}/auth/signin`, {
+      const response = await fetch(`${SERVER_URL}/auth/request-otp`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           email,
-          password,
         }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Signin failed');
+        throw new Error(data.error || 'Failed to request OTP');
+      }
+
+      return {
+        success: true,
+        message: data.message,
+      };
+    } catch (error) {
+      console.error('Request OTP error:', error);
+      throw error;
+    }
+  }
+
+  async verifyOTP(email, otp) {
+    try {
+      const response = await fetch(`${SERVER_URL}/auth/verify-otp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email,
+          otp,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'OTP verification failed');
       }
 
       // Store session data
@@ -88,8 +115,6 @@ class AuthService {
       }));
 
       // notify listeners
-      this.user = data.user;
-      this.session = data.session;
       this._emitAuthChange();
 
       return {
@@ -99,9 +124,15 @@ class AuthService {
         message: data.message,
       };
     } catch (error) {
-      console.error('Signin error:', error);
+      console.error('Verify OTP error:', error);
       throw error;
     }
+  }
+
+  // DEPRECATED: Use requestOTP and verifyOTP instead
+  // DEPRECATED: Use requestOTP and verifyOTP instead
+  async signin(email, password) {
+    throw new Error('Password-based login is deprecated. Please use requestOTP() and verifyOTP() methods instead.');
   }
 
   async signout() {
