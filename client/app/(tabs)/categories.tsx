@@ -220,14 +220,25 @@ const BudgetProgress = ({ categories }: { categories: SpendingCategory[] }) => {
               />
             );
           })}
-          {/* Vòng tròn trắng ở giữa */}
+          
+          {/* Vòng tròn trắng ở giữa để tạo hiệu ứng donut chart */}
           <Circle
             cx={radius}
             cy={radius}
-            r={radius * 0.4}
+            r={radius / 2.2}
             fill="white"
-            stroke="#f0f0f0"
-            strokeWidth={1}
+            stroke="#f8f8f8"
+            strokeWidth={2}
+          />
+          
+          {/* Thêm bóng mờ cho vòng tròn trắng */}
+          <Circle
+            cx={radius}
+            cy={radius}
+            r={radius / 2.2}
+            fill="transparent"
+            stroke="#5F58C210"
+            strokeWidth={4}
           />
         </Svg>
       </View>

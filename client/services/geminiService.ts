@@ -411,3 +411,65 @@ DO NOT use English category names like "Food", "Transport", "Shopping", "Health"
     throw new Error("Failed to analyze the receipt. Please try taking a clearer photo or try again.");
   }
 }
+
+// New function for voice-based receipt processing
+export async function generateReceiptJson(transcript: string): Promise<any> {
+  if (!transcript || transcript.trim() === '') {
+    throw new Error("Không có văn bản để xử lý");
+  }
+
+  try {
+    console.log('[geminiService] Processing voice transcript, length:', transcript.length);
+    
+    const prompt = `
+    Bạn là một AI chuyên gia xử lý hóa đơn. Nhiệm vụ của bạn là phân tích bản ghi giọng nói của người dùng mô tả các mặt hàng đã mua và chuyển đổi nó thành một đối tượng JSON có cấu trúc.
+
+    Phân tích văn bản sau đây về một hóa đơn:
+    "${transcript}"
+
+    CRITICAL: Your response MUST follow this EXACT schema:
+    {
+      "merchant": "tên cửa hàng/người bán",
+      "date": "ngày giao dịch (YYYY-MM-DD)",
+      "total": số tiền tổng (number),
+      "category": "danh mục chính của giao dịch (một trong các giá trị: Ăn uống, Di chuyển, Mua sắm, Giải trí, Sức khỏe, Giáo dục, Khác)",
+      "items": [
+        {
+          "name": "tên của mặt hàng",
+          "price": giá của mặt hàng (number),
+          "quantity": số lượng (number),
+          "category": "danh mục của mặt hàng (một trong các giá trị: Ăn uống, Di chuyển, Mua sắm, Giải trí, Sức khỏe, Giáo dục, Khác)"
+        }
+      ]
+    }
+
+    Lưu ý:
+    - Nếu ngày không được chỉ định, sử dụng ngày hôm nay.
+    - Tính tổng số tiền nếu không được đề cập bằng cách cộng giá các mặt hàng (số lượng * đơn giá).
+    - Đảm bảo tất cả các giá trị tiền tệ là số.
+    - Các danh mục PHẢI là một trong các giá trị: "Ăn uống", "Di chuyển", "Mua sắm", "Giải trí", "Sức khỏe", "Giáo dục", "Khác"
+    `;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: receiptSchema,
+      },
+    });
+
+    const jsonText = response.text?.trim() || '';
+    console.log("[geminiService] Raw voice response:", jsonText);
+    if (!jsonText) {
+      throw new Error("Không có phản hồi từ API");
+    }
+    
+    const parsedJson = JSON.parse(jsonText);
+    return parsedJson;
+
+  } catch (error) {
+    console.error("Error generating receipt from Gemini API:", error);
+    throw new Error("Tạo hóa đơn thất bại. Vui lòng thử lại với lời nói rõ ràng hơn.");
+  }
+}

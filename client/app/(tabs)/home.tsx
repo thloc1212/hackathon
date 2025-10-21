@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -83,6 +83,18 @@ export default function HomeScreen() {
   // Installment plan confirmation state
   const [showInstallmentModal, setShowInstallmentModal] = useState(false);
   const [installmentData, setInstallmentData] = useState<any>(null);
+  // Voice recognition state
+  const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [voiceTranscript, setVoiceTranscript] = useState<string>('');
+  const [voiceStatus, setVoiceStatus] = useState<string>('');
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [showVoiceConfirm, setShowVoiceConfirm] = useState<boolean>(false);
+  const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
+  const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
+  
+  // Reference for speech recognition
+  type SpeechRecognition = any;
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
   
   // Database context for centralized data management
   const {
@@ -116,6 +128,46 @@ export default function HomeScreen() {
     ping,
     parseTest
   } = useApi();
+  
+  // Toggle voice recording
+  const toggleRecording = () => {
+    if (isRecording) {
+      // Stop recording and process
+      setIsRecording(false);
+      setVoiceStatus('');
+      
+      // Clean up existing recognition instance
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.onend = null; // Remove onend handler to prevent restart
+          recognitionRef.current.stop();
+          recognitionRef.current = null; // Clear the reference
+        } catch (e) {
+          console.error('Error stopping recognition:', e);
+        }
+      }
+      
+      // Process transcript if available
+      if (voiceTranscript.trim()) {
+        setOcrText(voiceTranscript.trim());
+        setShowConfirmModal(true);
+      } else {
+        setVoiceStatus('');
+      }
+    } else {
+      // Start recording
+      setIsRecording(true);
+      setVoiceTranscript('');
+      setVoiceError('');
+      setVoiceStatus('Đang lắng nghe...');
+    }
+  };
+  
+  // Confirm and process voice transcript
+  const confirmVoiceTranscript = () => {
+    setShowConfirmModal(false);
+    // Text is already set, user can edit if needed
+  };
 
   useEffect(() => {
     const currentUser = AuthService.getCurrentUser();
@@ -127,6 +179,150 @@ export default function HomeScreen() {
       setUserName(name.charAt(0).toUpperCase() + name.slice(1));
     }
   }, []);
+  
+  // Initialize speech recognition
+  useEffect(() => {
+    if (Platform.OS !== 'web') {
+      // For mobile, we would need native modules
+      return;
+    }
+    
+    const SpeechRecognitionAPI = (window as any)?.SpeechRecognition || 
+                              (window as any)?.webkitSpeechRecognition;
+    
+    if (!SpeechRecognitionAPI) {
+      setPermissionGranted(false);
+      return;
+    }
+    
+    // Setup complete, waiting for user to start
+    setPermissionGranted(true);
+    
+    // Clean up recognition on unmount
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          // Clean up all handlers to prevent memory leaks
+          recognitionRef.current.onend = null;
+          recognitionRef.current.onresult = null;
+          recognitionRef.current.onerror = null;
+          recognitionRef.current.stop();
+        } catch (e) {
+          console.log('Error stopping recognition on unmount:', e);
+        } finally {
+          recognitionRef.current = null;
+        }
+      }
+    };
+  }, []);
+  
+  // Set up speech recognition when isRecording changes
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !permissionGranted) return;
+    
+    const SpeechRecognitionAPI = (window as any)?.SpeechRecognition || 
+                              (window as any)?.webkitSpeechRecognition;
+    
+    if (!SpeechRecognitionAPI) return;
+    
+    if (isRecording) {
+      // Add a small delay before starting a new recognition instance
+      // This helps prevent "aborted" errors when toggling quickly
+      setTimeout(() => {
+        // Don't proceed if user has already toggled off during this timeout
+        if (!isRecording) return;
+        
+        const recognition = new SpeechRecognitionAPI();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'vi-VN'; // Vietnamese language
+        
+        recognition.onresult = (event: any) => {
+          let interimTranscript = '';
+          let finalTranscript = '';
+          
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+              finalTranscript += event.results[i][0].transcript;
+            } else {
+              interimTranscript += event.results[i][0].transcript;
+            }
+          }
+          
+          if (finalTranscript) {
+            setVoiceTranscript(prev => prev + finalTranscript + ' ');
+          }
+          
+          // Show interim results for better UX
+          if (interimTranscript) {
+            setVoiceStatus(`Đang nghe: ${interimTranscript}`);
+          }
+        };
+        
+        recognition.onerror = (event: any) => {
+          console.error('Speech recognition error:', event.error);
+          
+          // Only show errors that aren't just from stopping the recognition
+          if (event.error !== 'aborted' || isRecording) {
+            setVoiceError(`Lỗi nhận dạng giọng nói: ${event.error}`);
+            
+            if (event.error === 'not-allowed') {
+              setPermissionGranted(false);
+              Alert.alert(
+                'Quyền truy cập bị từ chối',
+                'Bạn đã từ chối quyền truy cập micrô. Vui lòng cấp quyền và thử lại.'
+              );
+            }
+          }
+        };
+        
+        recognition.onend = () => {
+          // Only attempt to restart if we're still in recording mode
+          // and this specific recognition instance is still the current one
+          if (isRecording && recognitionRef.current === recognition) {
+            try {
+              recognition.start();
+            } catch (e) {
+              console.error('Failed to restart recognition:', e);
+              setIsRecording(false);
+            }
+          }
+        };
+        
+        // Store the recognition instance in the ref
+        recognitionRef.current = recognition;
+        
+        try {
+          recognition.start();
+        } catch (e) {
+          console.error('Error starting recognition:', e);
+          setIsRecording(false);
+          
+          if ((e as Error).message?.includes('permission')) {
+            setPermissionGranted(false);
+            Alert.alert(
+              'Cần quyền truy cập micrô',
+              'Vui lòng cấp quyền truy cập micrô để sử dụng tính năng này.'
+            );
+          }
+        }
+      }, 300); // Small delay to allow previous instance to fully clean up
+    } else if (recognitionRef.current) {
+      // Stop recording if isRecording is false
+      try {
+        const currentRecognition = recognitionRef.current;
+        // Remove handlers first to avoid unwanted callbacks
+        currentRecognition.onend = null;
+        currentRecognition.onresult = null;
+        currentRecognition.onerror = null;
+        currentRecognition.stop();
+      } catch (e) {
+        console.error('Error stopping recognition:', e);
+      } finally {
+        recognitionRef.current = null;
+      }
+    }
+  }, [isRecording, permissionGranted]);
 
 
 
@@ -762,6 +958,50 @@ export default function HomeScreen() {
                   );
                 })}
             </ScrollView>
+        {/* Gemini Input Section */}
+        <View style={dashboardStyles.geminiSection}>
+          <View style={{flex: 1, position: 'relative'}}>
+            <TextInput
+              multiline
+              value={ocrText}
+              onChangeText={setOcrText}
+              placeholder="Hãy điền biến động mới vào đây..."
+              placeholderTextColor={colors.icon}
+              style={[dashboardStyles.textInput, { 
+                backgroundColor: colors.background,
+                color: colors.text,
+                borderColor: colors.icon + '40',
+                paddingRight: 40, // Space for voice button
+              }]}
+            />
+            {/* Voice recording status */}
+            {voiceStatus && (
+              <View style={dashboardStyles.voiceStatusContainer}>
+                <Text style={dashboardStyles.voiceStatus}>{voiceStatus}</Text>
+              </View>
+            )}
+            {/* Voice button within input */}
+            <Pressable 
+              style={[
+                dashboardStyles.voiceButton, 
+                isRecording && { backgroundColor: 'rgba(255, 61, 0, 0.1)', borderRadius: 20 }
+              ]}
+              onPress={toggleRecording}
+            >
+              <Ionicons 
+                name={isRecording ? "radio" : "mic"} 
+                size={24} 
+                color={isRecording ? "#FF3D00" : "#5F58C2"} 
+              />
+            </Pressable>
+          </View>
+          <Pressable
+            onPress={callGemini}
+            style={[dashboardStyles.geminiButton, { backgroundColor: parseError ? "#FF3D00" : "#5F58C2" }]}
+            disabled={parseLoading || !ocrText.trim()}
+          >
+            {parseLoading ? (
+              <ActivityIndicator size="small" color="#fff" />
             ) : (
               <Text style={dashboardStyles.upcomingEmptyText}>
                 Chưa có khoảng trả hàng tháng nào
@@ -1139,6 +1379,55 @@ export default function HomeScreen() {
                     <Text style={dashboardStyles.addButtonText}>Tạo kế hoạch trả góp</Text>
                   </>
                 )}
+      {/* Voice Confirm Modal */}
+      <Modal
+        visible={showConfirmModal}
+        onRequestClose={() => setShowConfirmModal(false)}
+        transparent={true}
+        animationType="slide"
+      >
+        <View style={dashboardStyles.modalOverlay}>
+          <View style={dashboardStyles.modalContainer}>
+            <View style={dashboardStyles.modalHeader}>
+              <Text style={dashboardStyles.modalTitle}>Xác nhận văn bản</Text>
+              <Pressable onPress={() => setShowConfirmModal(false)}>
+                <Ionicons name="close" size={24} color="#64748b" />
+              </Pressable>
+            </View>
+            
+            <Text style={dashboardStyles.modalSubtitle}>
+              Văn bản đã được nhận dạng. Bạn có thể chỉnh sửa nếu cần.
+            </Text>
+            
+            <View style={{marginVertical: 16}}>
+              <TextInput
+                multiline
+                value={ocrText}
+                onChangeText={setOcrText}
+                style={dashboardStyles.editTextInput}
+                placeholder="Chỉnh sửa nếu cần..."
+                placeholderTextColor="#9ca3af"
+              />
+            </View>
+            
+            <View style={dashboardStyles.modalActions}>
+              <Pressable
+                style={[dashboardStyles.actionButton, dashboardStyles.editButton]}
+                onPress={() => setShowConfirmModal(false)}
+              >
+                <Ionicons name="create-outline" size={18} color="#5F58C2" />
+                <Text style={dashboardStyles.editButtonText}>Chỉnh sửa</Text>
+              </Pressable>
+              
+              <Pressable
+                style={[dashboardStyles.actionButton, dashboardStyles.addButton]}
+                onPress={() => {
+                  setShowConfirmModal(false);
+                  callGemini();
+                }}
+              >
+                <Ionicons name="checkmark" size={18} color="#fff" />
+                <Text style={dashboardStyles.addButtonText}>Xác nhận</Text>
               </Pressable>
             </View>
           </View>
@@ -1290,6 +1579,14 @@ const dashboardStyles = StyleSheet.create({
     marginBottom: 20,
     marginTop: 10,
     color: '#1f2937',
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    fontFamily: FontFamily.regular,
+    fontWeight: FontWeight.regular,
+    color: '#64748b',
+    textAlign: 'center',
+    marginBottom: 12,
   },
   modalContent: {
     flex: 1,
@@ -1891,6 +2188,31 @@ const dashboardStyles = StyleSheet.create({
     fontFamily: FontFamily.medium,
     fontWeight: FontWeight.medium,
     color: 'white',
+  // Voice input styles
+  voiceButton: {
+    position: 'absolute',
+    right: 8,
+    top: 8,
+    padding: 8,
+    borderRadius: 20,
+    zIndex: 10,
+  },
+  voiceStatusContainer: {
+    position: 'absolute',
+    bottom: 4,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    backgroundColor: 'rgba(95, 88, 194, 0.1)',
+    borderRadius: 8,
+    zIndex: 5,
+  },
+  voiceStatus: {
+    fontSize: 12,
+    color: '#5F58C2',
+    fontFamily: FontFamily.medium,
+    fontWeight: FontWeight.medium,
     textAlign: 'center',
   },
 });
