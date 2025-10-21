@@ -1,6 +1,6 @@
-import { Platform, StyleSheet, View, Pressable, ScrollView, TextInput, Modal, TouchableOpacity, Alert, SafeAreaView, RefreshControl } from 'react-native';
-import { useMemo, useState, useCallback, useEffect } from 'react';
-import Svg, { Path, G, Circle } from 'react-native-svg';
+import { Platform, StyleSheet, View, Pressable, ScrollView, TextInput, Modal, TouchableOpacity, Alert, SafeAreaView, RefreshControl, Animated } from 'react-native';
+import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
+import Svg, { Path, G, Circle, Text as SvgText } from 'react-native-svg';
 import { StatusBar } from 'expo-status-bar';
 
 // Cross-platform alert function
@@ -33,6 +33,7 @@ import { SpendingCategory, SpendingData } from '@/types';
 import { formatCurrency } from '@/utils/formatters';
 import { useDatabase } from '@/hooks/useDatabase';
 import AuthService from '@/lib/authService';
+import { FontFamily } from '@/constants/fonts';
 
 // Hàm chuyển đổi độ sang radian
 const polarToCartesian = (centerX: number, centerY: number, radius: number, angleInDegrees: number) => {
@@ -95,6 +96,11 @@ const SERVER_URL = getServerUrl();
 const DEFAULT_BUDGET = 500000; // 500k
 
 const BudgetProgress = ({ categories }: { categories: SpendingCategory[] }) => {
+  // State to track hovered/touched segment
+  const [selectedSegment, setSelectedSegment] = useState<string | null>(null);
+  const [hoveredSegment, setHoveredSegment] = useState<string | null>(null);
+  const tooltipOpacity = useRef(new Animated.Value(0)).current;
+  
   // Filter out income categories (Thu nhập) from statistics
   const expenseCategories = categories.filter(cat => cat.name !== 'Thu nhập');
   
@@ -158,6 +164,56 @@ const BudgetProgress = ({ categories }: { categories: SpendingCategory[] }) => {
   const normalizedRadius = radius - strokeWidth / 2;
   const circumference = 2 * Math.PI * normalizedRadius;
 
+  // Handle segment press
+  const handleSegmentPress = (categoryId: string) => {
+    if (selectedSegment === categoryId) {
+      setSelectedSegment(null);
+      Animated.timing(tooltipOpacity, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      setSelectedSegment(categoryId);
+      Animated.timing(tooltipOpacity, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+    }
+  };
+
+  // Handle hover (web only)
+  const handleSegmentHoverIn = (categoryId: string) => {
+    if (Platform.OS === 'web') {
+      setHoveredSegment(categoryId);
+      if (!selectedSegment) {
+        Animated.timing(tooltipOpacity, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }).start();
+      }
+    }
+  };
+
+  const handleSegmentHoverOut = () => {
+    if (Platform.OS === 'web') {
+      setHoveredSegment(null);
+      if (!selectedSegment) {
+        Animated.timing(tooltipOpacity, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }).start();
+      }
+    }
+  };
+
+  // Get displayed category info (selected takes priority over hovered)
+  const displayedSegmentId = selectedSegment || hoveredSegment;
+  const displayedCategory = sortedCategories.find(cat => cat.id === displayedSegmentId);
+
   return (
     <View style={styles.progressContainer}>
       <View style={styles.totalContainer}>
@@ -211,14 +267,35 @@ const BudgetProgress = ({ categories }: { categories: SpendingCategory[] }) => {
               "Z" // Đóng path bằng cách nối về tâm
             ].join(" ");
             
-            return (
+            const isSelected = selectedSegment === category.id;
+            const isHovered = hoveredSegment === category.id;
+            const isHighlighted = isSelected || isHovered;
+            
+            const PathComponent = (
               <Path
                 key={category.id}
                 d={pathData}
                 fill={category.color}
-                opacity={0.8}
+                opacity={isHighlighted ? 1 : 0.8}
+                onPress={() => handleSegmentPress(category.id)}
+                onPressIn={() => handleSegmentPress(category.id)}
               />
             );
+
+            // For web, wrap with hover handlers
+            if (Platform.OS === 'web') {
+              return (
+                <G
+                  key={category.id}
+                  onMouseEnter={() => handleSegmentHoverIn(category.id)}
+                  onMouseLeave={handleSegmentHoverOut}
+                >
+                  {PathComponent}
+                </G>
+              );
+            }
+            
+            return PathComponent;
           })}
           
           {/* Vòng tròn trắng ở giữa để tạo hiệu ứng donut chart */}
@@ -240,8 +317,49 @@ const BudgetProgress = ({ categories }: { categories: SpendingCategory[] }) => {
             stroke="#5F58C210"
             strokeWidth={4}
           />
+          
+          {/* Display category name and percentage in center */}
+          {displayedCategory && (
+            <G>
+              <SvgText
+                x={radius}
+                y={radius - 8}
+                fontSize="14"
+                fontWeight="600"
+                fill="#333"
+                textAnchor="middle"
+                fontFamily={FontFamily.semiBold}
+              >
+                {displayedCategory.name}
+              </SvgText>
+              <SvgText
+                x={radius}
+                y={radius + 10}
+                fontSize="18"
+                fontWeight="700"
+                fill={displayedCategory.color}
+                textAnchor="middle"
+                fontFamily={FontFamily.bold}
+              >
+                {displayedCategory.spentPercentage.toFixed(1)}%
+              </SvgText>
+            </G>
+          )}
         </Svg>
       </View>
+      
+      {/* Tooltip below the chart */}
+      {displayedCategory && (
+        <Animated.View style={[styles.tooltip, { opacity: tooltipOpacity }]}>
+          <View style={[styles.tooltipDot, { backgroundColor: displayedCategory.color }]} />
+          <View style={styles.tooltipContent}>
+            <ThemedText style={styles.tooltipCategory}>{displayedCategory.name}</ThemedText>
+            <ThemedText style={styles.tooltipPercentage}>
+              {displayedCategory.spentPercentage.toFixed(1)}% ({formatCurrency(displayedCategory.spent)})
+            </ThemedText>
+          </View>
+        </Animated.View>
+      )}
     </View>
   );
 };
@@ -836,6 +954,38 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignSelf: 'center',
     marginTop: 16,
+  },
+  tooltip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  tooltipDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 12,
+  },
+  tooltipContent: {
+    flex: 1,
+  },
+  tooltipCategory: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 4,
+  },
+  tooltipPercentage: {
+    fontSize: 14,
+    color: '#666',
   },
 
   // Categories container styles
