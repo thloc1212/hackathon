@@ -48,6 +48,64 @@ app.use((req, res, next) => {
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
+// Subscription detection schema (reference from geminiService.ts)
+// This schema is used for detecting subscription payments vs new subscriptions vs installment plans
+const subscriptionSchema = {
+  type: Type.OBJECT,
+  properties: {
+    isSubscriptionPayment: {
+      type: Type.BOOLEAN,
+      description: "Whether the text indicates a payment for an existing subscription service THIS MONTH.",
+    },
+    isNewSubscription: {
+      type: Type.BOOLEAN,
+      description: "Whether the text indicates creating/setting up a NEW subscription service.",
+    },
+    isInstallmentPlan: {
+      type: Type.BOOLEAN,
+      description: "Whether the text indicates a payment plan where user pays some amount upfront and will pay remaining in monthly installments.",
+    },
+    subscriptionName: {
+      type: Type.STRING,
+      description: "The name of the subscription service or item being purchased on installment.",
+    },
+    amount: {
+      type: Type.NUMBER,
+      description: "The monthly amount to be paid for subscription or installment.",
+    },
+    category: {
+      type: Type.STRING,
+      description: "The category of the subscription service or installment item.",
+      enum: ["Ăn uống", "Di chuyển", "Mua sắm", "Giải trí", "Sức khỏe", "Giáo dục", "Khác"],
+    },
+    description: {
+      type: Type.STRING,
+      description: "A brief description of what this is for.",
+    },
+    duration: {
+      type: Type.NUMBER,
+      description: "Duration in months for subscription or installment plan.",
+    },
+    confidence: {
+      type: Type.NUMBER,
+      description: "Confidence level from 0-100 on how certain you are about the classification.",
+    },
+    totalAmount: {
+      type: Type.NUMBER,
+      description: "Total amount for installment plans (upfront + remaining).",
+    },
+    paidAmount: {
+      type: Type.NUMBER,
+      description: "Amount already paid upfront for installment plans. Can be 0 if no upfront payment.",
+    },
+    remainingAmount: {
+      type: Type.NUMBER,
+      description: "Remaining amount to be paid in installments.",
+    },
+  },
+  required: ["isSubscriptionPayment", "isNewSubscription", "isInstallmentPlan", "confidence"],
+};
+
 // Route test
 app.get("/", (req, res) => res.send("Gemini local server is running!"));
 
@@ -1066,8 +1124,10 @@ app.put('/budgets', verifySession, async (req, res) => {
   }
 });
 
-// Helper function to detect subscription patterns
+// Helper function to detect subscription creation patterns
+// Matches the detection logic from geminiService.ts
 function detectSubscriptionPattern(text) {
+  // Keywords that indicate NEW subscription creation (not payments)
   const subscriptionCreationKeywords = [
     'subscription', 'sub ', ' sub', 'đăng ký', 'gói cước', 'register for', 'sign up for',
     'monthly plan', 'yearly plan', 'premium plan', 'gói premium', 'gói cước',
@@ -1076,14 +1136,15 @@ function detectSubscriptionPattern(text) {
     'yearly', 'hàng năm', 'annual'
   ];
   
-  // More specific subscription services when mentioned with creation context
+  // Specific subscription services when mentioned with creation context
   const subscriptionServices = [
     'netflix sub', 'spotify sub', 'youtube sub', 'yt sub', 'disney sub',
     'netflix subscription', 'spotify premium', 'youtube premium', 
     'office 365', 'adobe', 'canva pro', 'notion', 'figma',
-    'gym membership', 'phòng tập'
+    'gym membership', 'phòng tập', 'google one'
   ];
   
+  // Payment indicators (if present, it's a payment, not creation)
   const paymentIndicators = [
     'tháng này', 'this month', 'thanh toán', 'trả tiền', 'pay ', 'payment',
     'đã trả', 'paid', 'bill', 'hóa đơn', 'invoice'
@@ -1091,18 +1152,18 @@ function detectSubscriptionPattern(text) {
   
   const lowerText = text.toLowerCase().trim();
   
-  // If it contains payment indicators, it's likely a payment, not subscription creation
+  // Rule 1: If it contains payment indicators, it's likely a payment, not subscription creation
   const hasPaymentIndicator = paymentIndicators.some(indicator => lowerText.includes(indicator));
   if (hasPaymentIndicator) {
     console.log(`[detectSubscriptionPattern] Text "${text}" contains payment indicators, not subscription creation`);
     return false;
   }
   
-  // Check for subscription creation keywords or services with creation context
+  // Rule 2: Check for subscription creation keywords or services with creation context
   const hasSubscriptionKeyword = subscriptionCreationKeywords.some(keyword => lowerText.includes(keyword));
   const hasSubscriptionService = subscriptionServices.some(service => lowerText.includes(service));
   
-  // Additional pattern checks for subscription creation
+  // Rule 3: Additional pattern checks for subscription creation
   const hasNumericDuration = /\d+\s*(?:tháng|months?|years?|năm)/i.test(text);
   const hasMonthlyPattern = /\d+k?\s*\/?\s*(?:tháng|month|monthly)/i.test(text);
   
@@ -1115,12 +1176,15 @@ function detectSubscriptionPattern(text) {
 }
 
 // Helper function to detect subscription payment patterns
-function detectSubscriptionPayment(text) {
+// Now requires matching with user's active subscriptions
+function detectSubscriptionPayment(text, activeSubscriptions = []) {
+  // Indicators that suggest a payment is being made
   const paymentIndicators = [
     'tháng này', 'this month', 'thanh toán', 'trả tiền', 'pay ', 'payment ',
     'đã trả', 'paid', 'trả ', 'pay for', 'bill', 'hóa đơn', 'invoice'
   ];
   
+  // Common subscription services (fallback if no user subscriptions)
   const subscriptionServices = [
     'netflix', 'spotify', 'youtube', 'disney', 'prime', 'office', 'adobe',
     'internet', 'điện thoại', 'phone', 'mobile', 'wifi', 'gym', 'phòng tập',
@@ -1133,55 +1197,96 @@ function detectSubscriptionPayment(text) {
   
   const lowerText = text.toLowerCase().trim();
   
-  // Check if it contains both a subscription service and payment indicator
-  const hasService = subscriptionServices.some(service => lowerText.includes(service));
+  // Rule 1: Check if it contains a payment indicator
   const hasPayment = paymentIndicators.some(indicator => lowerText.includes(indicator));
   
-  // Additional checks for common patterns
-  const isPaymentPattern = hasService && hasPayment;
-  
-  // Check for patterns like "netflix 100k", "spotify premium payment", etc.
-  const hasMoneyPattern = /\d+[k|K]|\d+\.\d+|\d+,\d+|\d+ ?(?:đ|vnd|usd|dollar)/i.test(lowerText);
-  
-  // Be more specific: service + money pattern + no subscription creation indicators
+  // Rule 2: Check for subscription creation words (if present, it's NOT a payment)
   const subscriptionCreationWords = ['sub ', ' sub', 'subscription', 'đăng ký', 'register', 'sign up'];
   const hasCreationWords = subscriptionCreationWords.some(word => lowerText.includes(word));
   
-  const isServiceWithMoneyPayment = hasService && hasMoneyPattern && !hasCreationWords;
+  if (hasCreationWords) {
+    console.log(`[detectSubscriptionPayment] Text contains creation words, not a payment`);
+    return false;
+  }
   
-  console.log(`[detectSubscriptionPayment] Text: "${text}", hasService: ${hasService}, hasPayment: ${hasPayment}, hasMoneyPattern: ${hasMoneyPattern}, hasCreationWords: ${hasCreationWords}, result: ${isPaymentPattern || isServiceWithMoneyPayment}`);
+  // Rule 3: Check if text matches any of the user's active subscriptions
+  let hasMatchingSubscription = false;
+  let matchedSubscription = null;
   
-  return isPaymentPattern || isServiceWithMoneyPayment;
+  if (activeSubscriptions.length > 0) {
+    // Check against user's actual subscriptions
+    for (const sub of activeSubscriptions) {
+      const subNameLower = sub.name.toLowerCase();
+      // Check if text contains subscription name or subscription name contains text keywords
+      if (lowerText.includes(subNameLower) || subNameLower.includes(lowerText.split(' ')[0])) {
+        hasMatchingSubscription = true;
+        matchedSubscription = sub.name;
+        break;
+      }
+    }
+  } else {
+    // Fallback: check against common services if user has no subscriptions
+    hasMatchingSubscription = subscriptionServices.some(service => lowerText.includes(service));
+  }
+  
+  // Rule 4: Check for money patterns
+  const hasMoneyPattern = /\d+[k|K]|\d+\.\d+|\d+,\d+|\d+ ?(?:đ|vnd|usd|dollar)/i.test(lowerText);
+  
+  // Determine if it's a subscription payment:
+  // Must have: (payment indicator OR money pattern) AND matching subscription AND NOT creation words
+  const isPaymentPattern = (hasPayment || hasMoneyPattern) && hasMatchingSubscription && !hasCreationWords;
+  
+  console.log(`[detectSubscriptionPayment] Text: "${text}", hasPayment: ${hasPayment}, hasMoneyPattern: ${hasMoneyPattern}, hasMatchingSubscription: ${hasMatchingSubscription}, matchedSubscription: ${matchedSubscription}, hasCreationWords: ${hasCreationWords}, result: ${isPaymentPattern}`);
+  
+  return isPaymentPattern;
 }
 
 // Helper function to handle subscription payment parsing
-async function handleSubscriptionPayment(req, res) {
+async function handleSubscriptionPayment(req, res, activeSubscriptions = []) {
   try {
     const { ocrText } = req.body;
     
+    // Build context with user's active subscriptions
+    const subscriptionNames = activeSubscriptions.map(sub => sub.name).join(', ');
+    const subscriptionContext = activeSubscriptions.length > 0
+      ? `\n\nUser's active subscriptions: ${subscriptionNames}\nIMPORTANT: Only match payment to these subscriptions.`
+      : '\n\nUser has no active subscriptions yet.';
+    
+    // Enhanced prompt matching geminiService.ts
     const prompt = `Parse this subscription payment information. Return JSON only.
 
-Text: "${ocrText}"
+Text: "${ocrText}"${subscriptionContext}
 
 This appears to be a subscription payment. Extract:
 - serviceName (subscription service being paid for)
-- amount (payment amount, estimate if not specified)
+- amount (payment amount as number. Estimate based on common service prices if not specified:
+  * Netflix: 199000 VND
+  * Spotify: 59000 VND
+  * YouTube Premium: 79000 VND
+  * Disney+: 149000 VND
+  * Office 365: 169000 VND
+  * Adobe: 499000 VND
+  * Gym: 500000 VND
+  * Internet/WiFi: 300000 VND)
 - category (one of: Giải trí, Mua sắm, Sức khỏe, Giáo dục, Di chuyển, Ăn uống, Khác)
-- description (payment description)
+- description (payment description in Vietnamese)
 
 Category mapping guide:
-- Entertainment/Gaming/Streaming services → "Giải trí"
+- Entertainment/Gaming/Streaming services (Netflix, Spotify, YouTube, Disney+, etc.) → "Giải trí"
 - Shopping/E-commerce apps → "Mua sắm"  
-- Health/Fitness apps → "Sức khỏe"
+- Health/Fitness apps/Gym membership → "Sức khỏe"
 - Education/Learning apps → "Giáo dục"
 - Transport/Travel apps → "Di chuyển"
 - Food delivery services → "Ăn uống"
-- All other services → "Khác"
+- Productivity/Cloud/Software (Office, Adobe, etc.) → "Khác"
+- Internet/Phone/Utilities → "Khác"
 
 Examples:
 "Netflix tháng này" → {"serviceName": "Netflix", "amount": 199000, "category": "Giải trí", "description": "Thanh toán Netflix tháng này", "isSubscriptionPayment": true}
-"Spotify this month" → {"serviceName": "Spotify Premium", "amount": 59000, "category": "Giải trí", "description": "Thanh toán Spotify this month", "isSubscriptionPayment": true}
+"Spotify this month" → {"serviceName": "Spotify Premium", "amount": 59000, "category": "Giải trí", "description": "Thanh toán Spotify Premium tháng này", "isSubscriptionPayment": true}
+"gym membership" → {"serviceName": "Gym Membership", "amount": 500000, "category": "Sức khỏe", "description": "Thanh toán phí phòng tập tháng này", "isSubscriptionPayment": true}
 
+CRITICAL: Use Vietnamese for description field.
 Return valid JSON object with isSubscriptionPayment: true:`;
 
     const response = await ai.models.generateContent({
@@ -1324,16 +1429,28 @@ Return valid JSON object with isSubscription: true to indicate this is subscript
 }
 
 // Route chính để parse OCR text hoặc ảnh
-app.post("/parse", async (req, res) => {
+app.post("/parse", verifySession, async (req, res) => {
   try {
     const { ocrText, imageBase64, mimeType = "image/jpeg" } = req.body;
     // Log incoming request body to help debugging network issues
     console.log('[/parse] incoming body:', { ocrText: ocrText ? `${String(ocrText).slice(0,200)}${String(ocrText).length > 200 ? '...':''}` : undefined, hasImage: !!imageBase64 });
 
+    // Validate that either text or image is provided
+    if (!ocrText && !imageBase64) {
+      return res.status(400).json({ error: 'Either ocrText or imageBase64 is required' });
+    }
+
+    // Get user's active subscriptions for matching
+    const userSubscriptions = await database.findSubscriptionsByUserId(req.user.id);
+    const activeSubscriptions = userSubscriptions.filter(sub => sub.isActive);
+    
+    console.log(`[/parse] User has ${activeSubscriptions.length} active subscriptions:`, activeSubscriptions.map(s => s.name).join(', '));
+
     // Check for subscription payment patterns first (more specific)
-    if (ocrText && detectSubscriptionPayment(ocrText)) {
+    // Only detect as payment if there's a matching active subscription
+    if (ocrText && detectSubscriptionPayment(ocrText, activeSubscriptions)) {
       console.log('[/parse] Detected subscription payment pattern, routing to payment parsing');
-      return handleSubscriptionPayment(req, res);
+      return handleSubscriptionPayment(req, res, activeSubscriptions);
     }
 
     // Check if this is a subscription-related input (creation)
@@ -1342,7 +1459,8 @@ app.post("/parse", async (req, res) => {
       return handleSubscriptionParsing(req, res);
     }
 
-    const contents = [{ role: "user", parts: [{ text: buildPrompt() }] }];
+    // Build the prompt - use enhanced prompt for images
+    const contents = [{ role: "user", parts: [{ text: imageBase64 ? buildImagePrompt() : buildPrompt() }] }];
     if (ocrText) contents[0].parts.push({ text: `OCR:\n${ocrText}` });
     if (imageBase64)
       contents[0].parts.push({
@@ -1535,6 +1653,7 @@ Hãy đưa ra lời khuyên tiết kiệm ngắn gọn (2-3 câu) bằng tiếng
   }
 });
 
+// Prompt for text-based transaction parsing
 function buildPrompt() {
   return `IMPORTANT: You MUST respond in Vietnamese. Use Vietnamese category names ONLY.
 
@@ -1579,6 +1698,38 @@ CRITICAL: Type MUST be either "income" or "expense".
 CRITICAL: All amounts MUST be positive numbers regardless of income/expense type.
 
 DO NOT use English category names or types.`;
+}
+
+// Enhanced prompt for image-based receipt parsing (from geminiService.ts)
+function buildImagePrompt() {
+  return `IMPORTANT: You MUST respond in Vietnamese. Use Vietnamese category names ONLY.
+
+Phân tích hình ảnh hóa đơn và trích xuất thông tin:
+1. Tên cửa hàng/doanh nghiệp, ngày tháng
+2. Danh sách các mặt hàng đã mua với tên, số lượng và giá.
+3. Với mỗi món hàng, xác định danh mục của nó
+4. Xác định danh mục CHÍNH cho toàn bộ giao dịch:
+   - Nếu hầu hết các món là đồ ăn/đồ uống → category: "Ăn uống" (NOT "Food")
+   - Nếu liên quan đến vận chuyển/di chuyển → category: "Di chuyển" (NOT "Transport")
+   - Nếu là mua sắm/bán lẻ → category: "Mua sắm" (NOT "Shopping")
+   - Nếu là y tế/dược phẩm → category: "Sức khỏe" (NOT "Health")
+   - Nếu là giáo dục → category: "Giáo dục" (NOT "Education")
+   - Nếu là phim/game/giải trí → category: "Giải trí" (NOT "Entertainment")
+   - Nếu không chắc chắn → category: "Khác" (NOT "Other")
+   
+CRITICAL: The category field MUST be one of these EXACT Vietnamese strings:
+- "Ăn uống"
+- "Di chuyển"
+- "Mua sắm"
+- "Giải trí"
+- "Sức khỏe"
+- "Giáo dục"
+- "Khác"
+
+CRITICAL: All the items MUST have a price field as a number. If the price is missing or not a number, GUESS the price based on the item name using your knowledge.
+CRITICAL: The total field MUST be a number and MUST match the sum of all item prices. If the total is missing or not a number, CALCULATE it as the sum of all item prices.
+
+DO NOT use English category names like "Food", "Transport", "Shopping", "Health", "Education", "Entertainment", or "Other".`;
 }
 
 const PORT = process.env.PORT || 3000;

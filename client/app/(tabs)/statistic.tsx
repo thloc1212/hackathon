@@ -140,10 +140,8 @@ export default function StatisticScreen() {
     updateSubscription: updateSubscriptionInDb
   } = useDatabase();
 
-  // Auto-refresh when component mounts (only once)
-  useEffect(() => {
-    refreshData(); // Don't pass filter on initial load
-  }, []); // Empty dependency to run only once
+  // Note: Removed auto-refresh on mount - DatabaseProvider handles initial data load
+  // Data is automatically available from useDatabase() context
 
   // Pull to refresh handler
   const onRefresh = useCallback(async () => {
