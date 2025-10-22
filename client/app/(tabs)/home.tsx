@@ -52,7 +52,6 @@ import { Subscription } from '@/types';
 import AuthService from '@/lib/authService';
 import { useApi, GeminiTransactionResponse } from '@/hooks/useApi';
 import { useDatabase } from '@/hooks/useDatabase';
-import { detectSubscriptionPayment } from '@/services/geminiService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -496,115 +495,63 @@ export default function HomeScreen() {
   // No need for manual data loading
 
   const callGemini = async () => {
+    if (!ocrText.trim()) return;
+    
     try {
       setIsProcessingAI(true);
       
-      // First, check if this is subscription-related
-      const subscriptionDetection = await detectSubscriptionPayment(ocrText, subscriptions || []);
-      
-      console.log('[home] Subscription detection result:', subscriptionDetection);
-      console.log('[home] Input text analyzed:', ocrText);
-      
-      // If it's a subscription payment, show subscription selection modal
-      if (subscriptionDetection.isSubscriptionPayment && subscriptionDetection.confidence && subscriptionDetection.confidence >= 60) {
-        console.log('[home] ✅ SUBSCRIPTION PAYMENT detected with confidence:', subscriptionDetection.confidence);
-        setSuggestedSubscription({
-          name: subscriptionDetection.subscriptionName || '',
-          amount: subscriptionDetection.amount,
-          category: subscriptionDetection.category,
-          description: subscriptionDetection.description
-        });
-        setShowSubscriptionModal(true);
-        return;
-      }
-      
-      // If it's an installment plan, show confirmation modal
-      if (subscriptionDetection.isInstallmentPlan && subscriptionDetection.confidence && subscriptionDetection.confidence >= 60) {
-        console.log('[home] ✅ INSTALLMENT PLAN detected with confidence:', subscriptionDetection.confidence);
-        
-        // Create installment data for modal
-        const paidAmount = subscriptionDetection.paidAmount || 0;
-        const installmentInfo = {
-          subscriptionData: {
-            name: subscriptionDetection.subscriptionName || 'Khoản trả góp',
-            pricePerMonth: subscriptionDetection.amount || 0, // Monthly installment amount
-            totalMonths: subscriptionDetection.duration || 12,
-            category: subscriptionDetection.category || 'Khác',
-            description: subscriptionDetection.description || `Trả góp ${subscriptionDetection.subscriptionName}`,
-            startDate: new Date().toISOString().split('T')[0], // Today
-            isActive: true,
-            currentMonth: 0, // Starting at month 0
-            paidAmount: 0 // No installment payment made yet
-          },
-          upfrontTransaction: paidAmount > 0 ? {
-            amount: paidAmount,
-            category: subscriptionDetection.category || 'Khác',
-            description: `${subscriptionDetection.subscriptionName} - Trả trước`,
-            date: new Date().toISOString().split('T')[0],
-            type: 'expense' as const,
-            merchant: subscriptionDetection.subscriptionName || 'Trả góp',
-            items: []
-          } : null,
-          totalAmount: subscriptionDetection.totalAmount,
-          paidAmount: paidAmount,
-          remainingAmount: subscriptionDetection.remainingAmount,
-          hasUpfrontPayment: paidAmount > 0
-        };
-        
-        setInstallmentData(installmentInfo);
-        setShowInstallmentModal(true);
-        return;
-      }
-      
-      // If it's a new subscription creation, show subscription creation modal
-      if (subscriptionDetection.isNewSubscription && subscriptionDetection.confidence && subscriptionDetection.confidence >= 60) {
-        console.log('[home] ✅ NEW SUBSCRIPTION detected with confidence:', subscriptionDetection.confidence);
-        
-        // Use duration from Gemini detection, with fallback to manual extraction
-        // Ensure totalMonths is always a number (required by the server)
-        let totalMonths = subscriptionDetection.duration;
-        
-        if (!totalMonths) {
-          // Try to extract from text
-          const durationMatch = ocrText.match(/(\d+)\s*tháng/i);
-          totalMonths = durationMatch ? parseInt(durationMatch[1]) : 12; // Default to 12 months if not specified
-        }
-        
-        // Create proper subscription data
-        const subscriptionData = {
-          name: subscriptionDetection.subscriptionName || 'Khoản trả hàng tháng mới',
-          pricePerMonth: subscriptionDetection.amount || 0,
-          totalMonths: totalMonths, // This is now guaranteed to be a number
-          category: subscriptionDetection.category || 'Khác',
-          description: subscriptionDetection.description || 'Khoản trả hàng tháng mới',
-          startDate: new Date().toISOString().split('T')[0], // Today
-          isActive: true,
-          currentMonth: 0, // Starting at month 0
-          paidAmount: 0 // No payment made yet
-        };
-        
-        setNewSubscriptionData(subscriptionData);
-        setShowSubscriptionCreationModal(true);
-        return;
-      }
-      
-      // If not subscription-related or low confidence, proceed with normal receipt parsing
-      console.log('[home] ➡️ NORMAL RECEIPT parsing (not subscription-related or low confidence)');
+      // Send text to server for parsing (server will handle subscription detection and Gemini calls)
+      console.log('[home] Sending text to server for parsing:', ocrText);
       const response = await parseReceipt(ocrText);
       
       if (response.success && response.data) {
-        // Structure the response and show modal
-        setStructuredResponse(response.data);
+        const data = response.data;
+        
+        // Check if server detected a subscription payment
+        if (data.isSubscriptionPayment) {
+          console.log('[home] ✅ Server detected SUBSCRIPTION PAYMENT');
+          setSuggestedSubscription({
+            name: data.serviceName || '',
+            amount: data.amount,
+            category: data.category,
+            description: data.description
+          });
+          setShowSubscriptionModal(true);
+          return;
+        }
+        
+        // Check if server detected a new subscription
+        if (data.isSubscription) {
+          console.log('[home] ✅ Server detected NEW SUBSCRIPTION');
+          const subscriptionData = {
+            name: data.name || 'Khoản trả hàng tháng mới',
+            pricePerMonth: data.pricePerMonth || 0,
+            totalMonths: data.totalMonths || 12,
+            category: data.category || 'Khác',
+            description: data.description || 'Khoản trả hàng tháng mới',
+            startDate: data.startDate || new Date().toISOString().split('T')[0],
+            isActive: true,
+            currentMonth: 0,
+            paidAmount: 0
+          };
+          setNewSubscriptionData(subscriptionData);
+          setShowSubscriptionCreationModal(true);
+          return;
+        }
+        
+        // Normal transaction - show modal for confirmation
+        console.log('[home] ➡️ Server returned NORMAL TRANSACTION');
+        setStructuredResponse(data);
         // Pre-select all items (all checkboxes ticked by default)
-        if (response.data.items && Array.isArray(response.data.items)) {
-          setSelectedItems(response.data.items.map((_, index) => index));
+        if (data.items && Array.isArray(data.items)) {
+          setSelectedItems(data.items.map((_, index) => index));
         }
         setShowModal(true);
       } else {
         showCrossPlatformAlert('Lỗi', response.error || 'Không thể phân tích hóa đơn');
       }
     } catch (err: any) {
-      console.error('[client] Gemini error:', err);
+      console.error('[home] Parse error:', err);
       showCrossPlatformAlert('Lỗi', err?.message || 'Không thể phân tích hóa đơn');
     } finally {
       setIsProcessingAI(false);
@@ -991,6 +938,9 @@ export default function HomeScreen() {
               onChangeText={setOcrText}
               placeholder="Hãy điền biến động mới vào đây..."
               placeholderTextColor={colors.icon}
+              onSubmitEditing={callGemini}
+              blurOnSubmit={false}
+              returnKeyType="send"
               style={[dashboardStyles.textInput, { 
                 backgroundColor: colors.background,
                 color: colors.text,
@@ -1023,10 +973,13 @@ export default function HomeScreen() {
           </View>
           <Pressable
             onPress={callGemini}
-            style={[dashboardStyles.geminiButton, { backgroundColor: parseError ? "#FF3D00" : "#5F58C2" }]}
-            disabled={parseLoading || !ocrText.trim()}
+            style={[dashboardStyles.geminiButton, { 
+              backgroundColor: parseError ? "#FF3D00" : "#5F58C2",
+              opacity: (isProcessingAI || !ocrText.trim()) ? 0.5 : 1
+            }]}
+            disabled={isProcessingAI || !ocrText.trim()}
           >
-            {parseLoading ? (
+            {isProcessingAI ? (
               <ActivityIndicator size="small" color="#fff" />
             ) : (
               parseError ? <Ionicons name="reload" size={25} color="#fff" /> : <Ionicons name="send" size={25} color="#fff" />
