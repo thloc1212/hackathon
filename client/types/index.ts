@@ -68,6 +68,18 @@ export interface GeminiTransactionResponse {
   description?: string;
   items?: ReceiptItem[];
   raw?: any; // For debugging
+  
+  // Subscription/Installment plan fields
+  name?: string; // Service/product name for subscriptions
+  pricePerMonth?: number; // Monthly payment amount
+  totalMonths?: number; // Duration in months
+  startDate?: string; // Start date for subscription/installment
+  paidAmount?: number; // Upfront payment amount (for installment plans)
+  totalAmount?: number; // Total amount (for installment plans)
+  isSubscription?: boolean; // Whether this is a subscription creation
+  isSubscriptionPayment?: boolean; // Whether this is a subscription payment
+  isInstallment?: boolean; // Whether this is an installment plan
+  serviceName?: string; // Service name for subscription payments
 }
 
 export interface SpendingSummary {

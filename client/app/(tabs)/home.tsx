@@ -532,7 +532,9 @@ export default function HomeScreen() {
             startDate: data.startDate || new Date().toISOString().split('T')[0],
             isActive: true,
             currentMonth: 0,
-            paidAmount: 0
+            paidAmount: data.paidAmount || 0, // Use paidAmount from server (for installment plans)
+            totalAmount: data.totalAmount, // Include totalAmount for installment plans
+            isInstallment: data.isInstallment || false // Include isInstallment flag
           };
           setNewSubscriptionData(subscriptionData);
           setShowSubscriptionCreationModal(true);
@@ -677,14 +679,43 @@ export default function HomeScreen() {
       
       console.log('[home] Validated subscription data:', validatedData);
       
+      // Create the subscription first
       const success = await addSubscriptionToDb(validatedData);
       
       if (success) {
-        showCrossPlatformAlert('Thành công!', `Đã tạo khoản trả hàng tháng "${validatedData.name}" thành công!`);
+        let successMessage = `Đã tạo khoản trả hàng tháng "${validatedData.name}" thành công!`;
+        
+        // If there's a prepaid amount (paidAmount > 0), create an upfront payment transaction
+        if (validatedData.paidAmount && validatedData.paidAmount > 0) {
+          console.log('[home] Creating upfront payment transaction for paidAmount:', validatedData.paidAmount);
+          
+          const upfrontTransaction = {
+            amount: validatedData.paidAmount,
+            category: validatedData.category,
+            description: `${validatedData.name} - Trả trước`,
+            date: validatedData.startDate || new Date().toISOString().split('T')[0],
+            type: 'expense' as const,
+            merchant: validatedData.name,
+            items: []
+          };
+          
+          const transactionSuccess = await addTransactionToDb(upfrontTransaction);
+          
+          if (transactionSuccess) {
+            successMessage += ` Đã ghi nhận khoản trả trước ${formatCurrency(validatedData.paidAmount)}.`;
+            console.log('[home] ✅ Upfront payment transaction created successfully');
+          } else {
+            successMessage += ' Không thể ghi nhận giao dịch trả trước.';
+            console.error('[home] ❌ Failed to create upfront payment transaction');
+          }
+        }
+        
+        showCrossPlatformAlert('Thành công!', successMessage);
+        setOcrText(''); // Reset input after successful subscription creation
         setShowSubscriptionCreationModal(false);
         setNewSubscriptionData(null);
         
-        // Refresh data to show the new subscription
+        // Refresh data to show the new subscription and transaction
         await refreshData();
       } else {
         showCrossPlatformAlert('Lỗi', 'Không thể tạo khoản trả hàng tháng. Vui lòng thử lại.');

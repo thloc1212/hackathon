@@ -752,7 +752,7 @@ app.delete('/transactions/:id', verifySession, async (req, res) => {
 // Create subscription
 app.post('/subscriptions', verifySession, async (req, res) => {
   try {
-    const { name, description, pricePerMonth, totalMonths, category, startDate } = req.body;
+    const { name, description, pricePerMonth, totalMonths, category, startDate, paidAmount } = req.body;
 
     // Validate required fields
     if (!name || !pricePerMonth || !totalMonths || !category) {
@@ -767,6 +767,13 @@ app.post('/subscriptions', verifySession, async (req, res) => {
       });
     }
 
+    // Validate paidAmount if provided
+    if (paidAmount !== undefined && paidAmount !== null && paidAmount < 0) {
+      return res.status(400).json({ 
+        error: 'paidAmount cannot be negative' 
+      });
+    }
+
     const subscriptionData = {
       userId: req.user.id,
       name: name.trim(),
@@ -774,13 +781,14 @@ app.post('/subscriptions', verifySession, async (req, res) => {
       pricePerMonth: parseFloat(pricePerMonth),
       currentMonth: 1,
       totalMonths: parseInt(totalMonths),
-      paidAmount: 0,
+      paidAmount: paidAmount ? parseFloat(paidAmount) : 0, // Use provided paidAmount or default to 0
       category: category.trim(),
       startDate: startDate || new Date().toISOString().split('T')[0],
       nextPaymentDate: startDate || new Date().toISOString().split('T')[0],
       isActive: true
     };
 
+    console.log('[POST /subscriptions] Creating subscription with paidAmount:', subscriptionData.paidAmount);
     const newSubscription = await database.createSubscription(subscriptionData);
 
     res.status(201).json({
@@ -1124,121 +1132,199 @@ app.put('/budgets', verifySession, async (req, res) => {
   }
 });
 
-// Helper function to detect subscription creation patterns
-// Matches the detection logic from geminiService.ts
-function detectSubscriptionPattern(text) {
-  // Keywords that indicate NEW subscription creation (not payments)
-  const subscriptionCreationKeywords = [
-    'subscription', 'sub ', ' sub', 'đăng ký', 'gói cước', 'register for', 'sign up for',
-    'monthly plan', 'yearly plan', 'premium plan', 'gói premium', 'gói cước',
-    'for 12 months', 'for 6 months', 'trong', 'months', 'tháng',
-    'monthly fee', 'phí hàng tháng', 'per month', '/tháng', '/month',
-    'yearly', 'hàng năm', 'annual'
-  ];
-  
-  // Specific subscription services when mentioned with creation context
-  const subscriptionServices = [
-    'netflix sub', 'spotify sub', 'youtube sub', 'yt sub', 'disney sub',
-    'netflix subscription', 'spotify premium', 'youtube premium', 
-    'office 365', 'adobe', 'canva pro', 'notion', 'figma',
-    'gym membership', 'phòng tập', 'google one'
-  ];
-  
-  // Payment indicators (if present, it's a payment, not creation)
-  const paymentIndicators = [
-    'tháng này', 'this month', 'thanh toán', 'trả tiền', 'pay ', 'payment',
-    'đã trả', 'paid', 'bill', 'hóa đơn', 'invoice'
-  ];
-  
-  const lowerText = text.toLowerCase().trim();
-  
-  // Rule 1: If it contains payment indicators, it's likely a payment, not subscription creation
-  const hasPaymentIndicator = paymentIndicators.some(indicator => lowerText.includes(indicator));
-  if (hasPaymentIndicator) {
-    console.log(`[detectSubscriptionPattern] Text "${text}" contains payment indicators, not subscription creation`);
-    return false;
-  }
-  
-  // Rule 2: Check for subscription creation keywords or services with creation context
-  const hasSubscriptionKeyword = subscriptionCreationKeywords.some(keyword => lowerText.includes(keyword));
-  const hasSubscriptionService = subscriptionServices.some(service => lowerText.includes(service));
-  
-  // Rule 3: Additional pattern checks for subscription creation
-  const hasNumericDuration = /\d+\s*(?:tháng|months?|years?|năm)/i.test(text);
-  const hasMonthlyPattern = /\d+k?\s*\/?\s*(?:tháng|month|monthly)/i.test(text);
-  
-  const isSubscriptionCreation = hasSubscriptionKeyword || hasSubscriptionService || 
-                                 (hasNumericDuration && hasMonthlyPattern);
-  
-  console.log(`[detectSubscriptionPattern] Text: "${text}", hasSubscriptionKeyword: ${hasSubscriptionKeyword}, hasSubscriptionService: ${hasSubscriptionService}, hasNumericDuration: ${hasNumericDuration}, hasMonthlyPattern: ${hasMonthlyPattern}, hasPaymentIndicator: ${hasPaymentIndicator}, result: ${isSubscriptionCreation}`);
-  
-  return isSubscriptionCreation && !hasPaymentIndicator;
+// Quick classification prompt - Phase 1: Fast type detection
+function buildClassificationPrompt(subscriptionContext) {
+  return `PHÂN LOẠI NHANH văn bản/hình ảnh thành 1 trong 4 loại:
+
+${subscriptionContext}
+
+1. "transaction" - Giao dịch thường (mua hàng, lương, quà)
+2. "subscription_payment" - Thanh toán dv hàng tháng HIỆN TẠI
+3. "subscription_creation" - Tạo dv hàng tháng MỚI
+4. "installment_plan" - Trả góp sản phẩm
+
+QUY TẮC:
+- Có "tháng này", "bill", "thanh toán" + tên dv trong danh sách → subscription_payment
+- Có "đăng ký", "/tháng", "subscription" + chưa có trong danh sách → subscription_creation
+- Có "trả góp", "đã trả", "còn lại" + sản phẩm → installment_plan
+- Còn lại → transaction
+
+TRẢ VỀ JSON: {"inputType": "...", "confidence": 0-100}`;
 }
 
-// Helper function to detect subscription payment patterns
-// Now requires matching with user's active subscriptions
-function detectSubscriptionPayment(text, activeSubscriptions = []) {
-  // Indicators that suggest a payment is being made
-  const paymentIndicators = [
-    'tháng này', 'this month', 'thanh toán', 'trả tiền', 'pay ', 'payment ',
-    'đã trả', 'paid', 'trả ', 'pay for', 'bill', 'hóa đơn', 'invoice'
-  ];
-  
-  // Common subscription services (fallback if no user subscriptions)
-  const subscriptionServices = [
-    'netflix', 'spotify', 'youtube', 'disney', 'prime', 'office', 'adobe',
-    'internet', 'điện thoại', 'phone', 'mobile', 'wifi', 'gym', 'phòng tập',
-    'app store', 'google play', 'steam', 'gamepass', 'aws', 'cloud',
-    'yt', 'fb', 'facebook', 'instagram', 'tiktok', 'zoom', 'canva',
-    'dropbox', 'icloud', 'onedrive', 'figma', 'slack', 'notion',
-    'amazon', 'hulu', 'paramount', 'hbo', 'max', 'apple music',
-    'google one', 'microsoft 365', 'creative cloud'
-  ];
-  
-  const lowerText = text.toLowerCase().trim();
-  
-  // Rule 1: Check if it contains a payment indicator
-  const hasPayment = paymentIndicators.some(indicator => lowerText.includes(indicator));
-  
-  // Rule 2: Check for subscription creation words (if present, it's NOT a payment)
-  const subscriptionCreationWords = ['sub ', ' sub', 'subscription', 'đăng ký', 'register', 'sign up'];
-  const hasCreationWords = subscriptionCreationWords.some(word => lowerText.includes(word));
-  
-  if (hasCreationWords) {
-    console.log(`[detectSubscriptionPayment] Text contains creation words, not a payment`);
-    return false;
-  }
-  
-  // Rule 3: Check if text matches any of the user's active subscriptions
-  let hasMatchingSubscription = false;
-  let matchedSubscription = null;
-  
-  if (activeSubscriptions.length > 0) {
-    // Check against user's actual subscriptions
-    for (const sub of activeSubscriptions) {
-      const subNameLower = sub.name.toLowerCase();
-      // Check if text contains subscription name or subscription name contains text keywords
-      if (lowerText.includes(subNameLower) || subNameLower.includes(lowerText.split(' ')[0])) {
-        hasMatchingSubscription = true;
-        matchedSubscription = sub.name;
-        break;
-      }
+// Phase 2: Detailed processing prompts for each type
+function buildTransactionPrompt() {
+  return `Trích xuất GIAO DỊCH THƯỜNG từ văn bản/hình ảnh.
+
+PHÂN LOẠI:
+- Hóa đơn mua hàng → type: "expense"
+- Lương/thu nhập/thưởng/quà → type: "income"
+- Từ khóa: "cho", "tặng", "lương" → "income"
+
+TRÍCH XUẤT:
+- merchant: tên cửa hàng/nguồn
+- total: tổng tiền
+- type: "income" hoặc "expense"
+- category: "Thu nhập" | "Ăn uống" | "Di chuyển" | "Mua sắm" | "Giải trí" | "Sức khỏe" | "Giáo dục" | "Khác"
+- items: [{"description": "...", "amount": số, "category": "..."}]
+
+VD: "Mua cà phê 50k" → {"merchant": "Quán cà phê", "total": 50000, "type": "expense", "category": "Ăn uống", "items": [{"description": "Cà phê", "amount": 50000, "category": "Ăn uống"}]}`;
+}
+
+function buildSubscriptionPaymentPrompt(subscriptionNames) {
+  return `Trích xuất THANH TOÁN DV HÀNG THÁNG.
+
+Dịch vụ hiện tại: ${subscriptionNames}
+
+TRÍCH XUẤT:
+- serviceName: tên dịch vụ (PHẢI khớp với danh sách trên)
+- amount: số tiền thanh toán (ước lượng nếu không có)
+- category: "Giải trí" | "Mua sắm" | "Sức khỏe" | "Giáo dục" | "Di chuyển" | "Ăn uống" | "Khác"
+- description: "Thanh toán [tên dv] tháng này"
+
+Giá phổ biến:
+- Netflix: 199000, Spotify: 59000, YouTube: 79000
+- Gym: 500000, WiFi: 300000
+
+VD: "Netflix tháng này" → {"serviceName": "Netflix", "amount": 199000, "category": "Giải trí", "description": "Thanh toán Netflix tháng này", "isSubscriptionPayment": true}`;
+}
+
+function buildSubscriptionCreationPrompt() {
+  return `Trích xuất TẠO DV HÀNG THÁNG MỚI.
+
+TRÍCH XUẤT:
+- name: tên dịch vụ
+- pricePerMonth: giá/tháng
+- totalMonths: số tháng (mặc định 12)
+- category: "Giải trí" | "Mua sắm" | "Sức khỏe" | "Giáo dục" | "Di chuyển" | "Ăn uống" | "Khác"
+- description: mô tả ngắn
+- paidAmount: 0
+- startDate: "${new Date().toISOString().split('T')[0]}"
+
+VD: "Netflix 12 tháng" → {"name": "Netflix", "pricePerMonth": 199000, "totalMonths": 12, "category": "Giải trí", "description": "Netflix streaming subscription", "paidAmount": 0, "startDate": "${new Date().toISOString().split('T')[0]}", "isSubscription": true}`;
+}
+
+function buildInstallmentPrompt() {
+  return `Trích xuất KẾ HOẠCH TRẢ GÓP.
+
+TÍNH TOÁN:
+- "đã trả X, còn Y trong Z tháng" → paidAmount=X, pricePerMonth=Y/Z
+- "trả góp Z tháng, A/tháng" → paidAmount=0, pricePerMonth=A
+
+TRÍCH XUẤT:
+- name: tên sản phẩm
+- pricePerMonth: tiền/tháng (tính từ công thức trên)
+- totalMonths: số tháng
+- category: "Mua sắm" (phone/laptop) | "Khác" (nhà/xe)
+- description: mô tả chi tiết
+- paidAmount: số tiền đã trả (LẤY từ văn bản)
+- totalAmount: paidAmount + (pricePerMonth × totalMonths)
+- startDate: "${new Date().toISOString().split('T')[0]}"
+
+VD: "điện thoại, đã trả 2tr, còn 10tr trong 12 tháng" → {"name": "Điện thoại", "pricePerMonth": 833333, "totalMonths": 12, "category": "Mua sắm", "description": "Điện thoại trả góp, đã trả trước 2 triệu", "paidAmount": 2000000, "totalAmount": 12000000, "startDate": "${new Date().toISOString().split('T')[0]}", "isInstallment": true, "isSubscription": true}`;
+}
+
+// Helper function to classify input type using Gemini AI (DEPRECATED - now using unified prompt)
+// Determines if input is: transaction, subscription payment, subscription creation, or installment plan
+async function classifyInputType(text, activeSubscriptions = []) {
+  try {
+    // Build subscription context for better classification
+    const subscriptionNames = activeSubscriptions
+      .map(sub => sub.name)
+      .join(', ');
+    const subscriptionContext = activeSubscriptions.length > 0
+      ? `\n\nDịch vụ hàng tháng hiện tại của người dùng: ${subscriptionNames}`
+      : '\n\nNgười dùng chưa có dịch vụ hàng tháng nào.';
+
+    const classificationSchema = {
+      type: Type.OBJECT,
+      properties: {
+        inputType: {
+          type: Type.STRING,
+          description: "The type of input detected",
+          enum: ["transaction", "subscription_payment", "subscription_creation", "installment_plan"],
+        },
+        confidence: {
+          type: Type.NUMBER,
+          description: "Confidence level from 0-100",
+        },
+        reasoning: {
+          type: Type.STRING,
+          description: "Brief explanation of why this classification was chosen",
+        },
+      },
+      required: ["inputType", "confidence", "reasoning"],
+    };
+
+    const prompt = `Phân loại văn bản sau đây vào MỘT trong các loại:
+
+Văn bản: "${text}"${subscriptionContext}
+
+CÁC LOẠI:
+
+1. "transaction" - GIAO DỊCH THƯỜNG:
+   - Hóa đơn mua hàng/dịch vụ (cà phê, siêu thị, xăng xe, v.v.)
+   - Lương, thu nhập, tiền thưởng
+   - Tiền quà, tiền cho/nhận từ gia đình/bạn bè
+   - Ví dụ: "mua cà phê 50k", "lương tháng 10tr", "mẹ cho 500k", "siêu thị 200k"
+
+2. "subscription_payment" - THANH TOÁN DV HÀNG THÁNG:
+   - CHỈ khi thanh toán cho MỘT TRONG CÁC DỊCH VỤ HIỆN TẠI: ${subscriptionNames || 'Không có'}
+   - Có từ khóa thanh toán: "tháng này", "bill", "thanh toán", "trả tiền"
+   - Ví dụ: "Netflix tháng này", "trả tiền Spotify"
+   - QUAN TRỌNG: CHỈ chọn loại này nếu tên dịch vụ KHỚP với danh sách hiện tại
+
+3. "subscription_creation" - TẠO DV HÀNG THÁNG MỚI:
+   - Đăng ký dịch vụ mới với thời hạn
+   - Có cụm từ: "đăng ký", "gói cước", "subscription", "/tháng"
+   - Ví dụ: "đăng ký Netflix 12 tháng", "Google One 50k/tháng"
+
+4. "installment_plan" - KẾ HOẠCH TRẢ GÓP:
+   - Mua hàng trả góp (laptop, điện thoại, v.v.)
+   - Có cụm từ: "trả góp", "đã trả", "còn lại", "từng tháng"
+   - Ví dụ: "laptop mới trả góp 12 tháng", "điện thoại đã trả 5tr, còn 10tr"
+
+QUY TẮC ƯU TIÊN:
+- Nếu có từ khóa thanh toán + khớp dịch vụ hiện tại → subscription_payment
+- Nếu có từ khóa đăng ký + thời hạn → subscription_creation
+- Nếu có từ khóa trả góp + sản phẩm → installment_plan
+- Mặc định hoặc không rõ → transaction
+
+Trả về classification với confidence 0-100 và reasoning.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: classificationSchema,
+      },
+    });
+
+    const jsonText = response.text?.trim() || '';
+    console.log("[classifyInputType] Gemini classification response:", jsonText);
+    
+    if (!jsonText) {
+      console.log('[classifyInputType] Empty response, defaulting to transaction');
+      return { inputType: 'transaction', confidence: 50, reasoning: 'Empty response from AI' };
     }
-  } else {
-    // Fallback: check against common services if user has no subscriptions
-    hasMatchingSubscription = subscriptionServices.some(service => lowerText.includes(service));
+    
+    const classification = JSON.parse(jsonText);
+    console.log(`[classifyInputType] Text: "${text}", Type: ${classification.inputType}, Confidence: ${classification.confidence}%, Reasoning: ${classification.reasoning}`);
+    
+    // If confidence is too low, default to transaction
+    if (classification.confidence < 60) {
+      console.log(`[classifyInputType] Low confidence (${classification.confidence}%), defaulting to transaction`);
+      return { inputType: 'transaction', confidence: classification.confidence, reasoning: classification.reasoning };
+    }
+    
+    return classification;
+
+  } catch (error) {
+    console.error('[classifyInputType] Error classifying input:', error);
+    // Default to transaction on error
+    return { inputType: 'transaction', confidence: 0, reasoning: 'Error during classification' };
   }
-  
-  // Rule 4: Check for money patterns
-  const hasMoneyPattern = /\d+[k|K]|\d+\.\d+|\d+,\d+|\d+ ?(?:đ|vnd|usd|dollar)/i.test(lowerText);
-  
-  // Determine if it's a subscription payment:
-  // Must have: (payment indicator OR money pattern) AND matching subscription AND NOT creation words
-  const isPaymentPattern = (hasPayment || hasMoneyPattern) && hasMatchingSubscription && !hasCreationWords;
-  
-  console.log(`[detectSubscriptionPayment] Text: "${text}", hasPayment: ${hasPayment}, hasMoneyPattern: ${hasMoneyPattern}, hasMatchingSubscription: ${hasMatchingSubscription}, matchedSubscription: ${matchedSubscription}, hasCreationWords: ${hasCreationWords}, result: ${isPaymentPattern}`);
-  
-  return isPaymentPattern;
 }
 
 // Helper function to handle subscription payment parsing
@@ -1342,39 +1428,50 @@ async function handleSubscriptionParsing(req, res) {
   try {
     const { ocrText } = req.body;
     
-    const prompt = `Parse this subscription creation information into structured data. Return JSON only.
+    const prompt = `Parse this subscription/installment plan creation information into structured data. Return JSON only.
 
 Text: "${ocrText}"
 
-This is for CREATING A NEW SUBSCRIPTION (not a payment). Extract:
-- name (subscription service name - infer full service name if abbreviated)
-- pricePerMonth (estimated monthly price as number in VND if not specified)
-- totalMonths (total subscription length in months, default to 12 if not specified)
+This can be:
+1. NEW SUBSCRIPTION (dịch vụ hàng tháng): monthly recurring service
+2. INSTALLMENT PLAN (trả góp): product purchased with monthly payments
+
+Extract:
+- name (service/product name - infer full name if abbreviated)
+- pricePerMonth (monthly payment amount in VND)
+- totalMonths (total duration in months, default 12 if not specified)
 - category (one of: Giải trí, Mua sắm, Sức khỏe, Giáo dục, Di chuyển, Ăn uống, Khác)
 - startDate (YYYY-MM-DD format, today if not specified: ${new Date().toISOString().split('T')[0]})
-- description (brief description of the subscription)
+- description (brief description)
+- paidAmount (số tiền đã trả trước - upfront payment if mentioned, 0 if not mentioned)
+- totalAmount (tổng giá trị - total value for installment plans: paidAmount + (pricePerMonth * totalMonths))
+- isInstallment (true if this is an installment plan for a product, false if monthly service)
+- isSubscription (true to indicate this is subscription/installment data)
 
-Category mapping guide:
-- Entertainment/Gaming/Streaming services → "Giải trí"
-- Shopping/E-commerce apps → "Mua sắm"  
-- Health/Fitness apps → "Sức khỏe"
-- Education/Learning apps → "Giáo dục"
-- Transport/Travel apps → "Di chuyển"
-- Food delivery services → "Ăn uống"
-- All other services → "Khác"
-
-Common service price estimates (VND):
-- Netflix: 199000, Spotify: 59000, YouTube Premium: 79000, Disney+: 149000
-- Office 365: 169000, Adobe: 499000, Canva Pro: 119000
-- Gym membership: 500000, WiFi/Internet: 300000
+Category mapping:
+- Entertainment/Streaming → "Giải trí"
+- Shopping/Products → "Mua sắm"  
+- Health/Fitness → "Sức khỏe"
+- Education → "Giáo dục"
+- Transport → "Di chuyển"
+- Food delivery → "Ăn uống"
+- Others → "Khác"
 
 Examples:
-"Netflix subscription" → {"name": "Netflix", "pricePerMonth": 199000, "totalMonths": 12, "category": "Giải trí", "startDate": "${new Date().toISOString().split('T')[0]}", "description": "Netflix streaming subscription", "isSubscription": true}
-"yt sub" → {"name": "YouTube Premium", "pricePerMonth": 79000, "totalMonths": 12, "category": "Giải trí", "startDate": "${new Date().toISOString().split('T')[0]}", "description": "YouTube Premium subscription", "isSubscription": true}
-"Spotify Premium for 6 months" → {"name": "Spotify Premium", "pricePerMonth": 59000, "totalMonths": 6, "category": "Giải trí", "startDate": "${new Date().toISOString().split('T')[0]}", "description": "Spotify Premium music subscription for 6 months", "isSubscription": true}
-"gym membership 500k/month" → {"name": "Gym Membership", "pricePerMonth": 500000, "totalMonths": 12, "category": "Sức khỏe", "startDate": "${new Date().toISOString().split('T')[0]}", "description": "Monthly gym membership", "isSubscription": true}
+"Netflix subscription" → {"name": "Netflix", "pricePerMonth": 199000, "totalMonths": 12, "category": "Giải trí", "startDate": "${new Date().toISOString().split('T')[0]}", "description": "Netflix streaming subscription", "paidAmount": 0, "totalAmount": 2388000, "isInstallment": false, "isSubscription": true}
 
-Return valid JSON object with isSubscription: true to indicate this is subscription data:`;
+"laptop mới, trả góp 12 tháng, 2tr/tháng" → {"name": "Laptop", "pricePerMonth": 2000000, "totalMonths": 12, "category": "Mua sắm", "startDate": "${new Date().toISOString().split('T')[0]}", "description": "Laptop trả góp 12 tháng", "paidAmount": 0, "totalAmount": 24000000, "isInstallment": true, "isSubscription": true}
+
+"điện thoại mới, đã trả 5tr, còn 10tr trả trong 10 tháng" → {"name": "Điện thoại", "pricePerMonth": 1000000, "totalMonths": 10, "category": "Mua sắm", "startDate": "${new Date().toISOString().split('T')[0]}", "description": "Điện thoại trả góp, đã trả trước 5 triệu", "paidAmount": 5000000, "totalAmount": 15000000, "isInstallment": true, "isSubscription": true}
+
+"nhà mới, trả trước 100tr, còn 500tr trả 60 tháng" → {"name": "Nhà", "pricePerMonth": 8333333, "totalMonths": 60, "category": "Khác", "startDate": "${new Date().toISOString().split('T')[0]}", "description": "Nhà trả góp, đã trả trước 100 triệu", "paidAmount": 100000000, "totalAmount": 600000000, "isInstallment": true, "isSubscription": true}
+
+CRITICAL: 
+- paidAmount is the upfront payment already made (0 if not mentioned)
+- totalAmount = paidAmount + (pricePerMonth * totalMonths)
+- isInstallment: true for products (laptop, phone, house), false for services (Netflix, Spotify)
+
+Return valid JSON object:`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
@@ -1393,6 +1490,9 @@ Return valid JSON object with isSubscription: true to indicate this is subscript
             },
             startDate: { type: Type.STRING },
             description: { type: Type.STRING },
+            paidAmount: { type: Type.NUMBER },
+            totalAmount: { type: Type.NUMBER },
+            isInstallment: { type: Type.BOOLEAN },
             isSubscription: { type: Type.BOOLEAN }
           },
           required: ["name", "pricePerMonth", "totalMonths", "category", "startDate", "isSubscription"]
@@ -1417,7 +1517,18 @@ Return valid JSON object with isSubscription: true to indicate this is subscript
     // Ensure the isSubscription flag is set
     parsedData.isSubscription = true;
 
-    console.log('[/parse] Subscription data being sent to client:', JSON.stringify(parsedData, null, 2));
+    // Ensure default values for optional fields
+    if (parsedData.paidAmount === undefined) {
+      parsedData.paidAmount = 0;
+    }
+    if (parsedData.totalAmount === undefined) {
+      parsedData.totalAmount = parsedData.paidAmount + (parsedData.pricePerMonth * parsedData.totalMonths);
+    }
+    if (parsedData.isInstallment === undefined) {
+      parsedData.isInstallment = false;
+    }
+
+    console.log('[/parse] Subscription/Installment data being sent to client:', JSON.stringify(parsedData, null, 2));
     res.json(parsedData);
   } catch (error) {
     console.error('Subscription parsing error:', error);
@@ -1440,61 +1551,78 @@ app.post("/parse", verifySession, async (req, res) => {
       return res.status(400).json({ error: 'Either ocrText or imageBase64 is required' });
     }
 
-    // Get user's active subscriptions for matching
+    // Get user's active subscriptions for context
     const userSubscriptions = await database.findSubscriptionsByUserId(req.user.id);
     const activeSubscriptions = userSubscriptions.filter(sub => sub.isActive);
     
     console.log(`[/parse] User has ${activeSubscriptions.length} active subscriptions:`, activeSubscriptions.map(s => s.name).join(', '));
 
-    // Check for subscription payment patterns first (more specific)
-    // Only detect as payment if there's a matching active subscription
-    if (ocrText && detectSubscriptionPayment(ocrText, activeSubscriptions)) {
-      console.log('[/parse] Detected subscription payment pattern, routing to payment parsing');
-      return handleSubscriptionPayment(req, res, activeSubscriptions);
-    }
+    // Build subscription context
+    const subscriptionNames = activeSubscriptions.map(sub => sub.name).join(', ');
+    const subscriptionContext = activeSubscriptions.length > 0
+      ? `\n\nDịch vụ hàng tháng hiện tại: ${subscriptionNames}`
+      : '\n\nChưa có dịch vụ hàng tháng.';
 
-    // Check if this is a subscription-related input (creation)
-    if (ocrText && detectSubscriptionPattern(ocrText)) {
-      console.log('[/parse] Detected subscription pattern, routing to subscription parsing');
-      return handleSubscriptionParsing(req, res);
-    }
+    // ============ PHASE 1: QUICK CLASSIFICATION ============
+    console.log('[/parse] Phase 1: Quick classification...');
+    
+    const classificationPrompt = buildClassificationPrompt(subscriptionContext);
+    const classificationContents = [{ role: "user", parts: [{ text: classificationPrompt }] }];
+    
+    if (ocrText) classificationContents[0].parts.push({ text: `\n\nText: "${ocrText}"` });
+    if (imageBase64) classificationContents[0].parts.push({ inlineData: { mimeType, data: imageBase64 } });
 
-    // Build the prompt - use enhanced prompt for images
-    const contents = [{ role: "user", parts: [{ text: imageBase64 ? buildImagePrompt() : buildPrompt() }] }];
-    if (ocrText) contents[0].parts.push({ text: `OCR:\n${ocrText}` });
-    if (imageBase64)
-      contents[0].parts.push({
-        inlineData: { mimeType, data: imageBase64 },
-      });
+    const classificationSchema = {
+      type: Type.OBJECT,
+      properties: {
+        inputType: {
+          type: Type.STRING,
+          enum: ["transaction", "subscription_payment", "subscription_creation", "installment_plan"],
+        },
+        confidence: { type: Type.NUMBER },
+      },
+      required: ["inputType", "confidence"],
+    };
 
-    const response = await ai.models.generateContent({
+    const classificationResponse = await ai.models.generateContent({
       model: "gemini-2.5-flash",
-      contents,
+      contents: classificationContents,
       config: {
         responseMimeType: "application/json",
-        responseSchema: {
+        responseSchema: classificationSchema,
+      },
+    });
+
+    let classification;
+    if (classificationResponse && classificationResponse.parsed) {
+      classification = classificationResponse.parsed;
+    } else if (classificationResponse && typeof classificationResponse.text === 'string') {
+      classification = JSON.parse(classificationResponse.text);
+    } else {
+      return res.status(500).json({ error: 'Failed to classify input' });
+    }
+
+    const inputType = classification.inputType || 'transaction';
+    console.log(`[/parse] Classification result: ${inputType} (confidence: ${classification.confidence}%)`);
+
+    // ============ PHASE 2: DETAILED PROCESSING ============
+    console.log(`[/parse] Phase 2: Processing as ${inputType}...`);
+    
+    let processingPrompt;
+    let processingSchema;
+
+    switch (inputType) {
+      case 'transaction':
+        processingPrompt = buildTransactionPrompt();
+        processingSchema = {
           type: Type.OBJECT,
           properties: {
             merchant: { type: Type.STRING },
             total: { type: Type.NUMBER },
-            type: {
-              type: Type.STRING,
-              description: "Type of transaction - income for salary/earnings, expense for purchases/spending",
-              enum: ["income", "expense"],
-            },
+            type: { type: Type.STRING, enum: ["income", "expense"] },
             category: {
               type: Type.STRING,
-              description: "The primary category for this transaction. For income use 'Thu nhập', for expenses choose the most relevant category.",
-              enum: [
-                "Thu nhập",
-                "Ăn uống",
-                "Di chuyển",
-                "Mua sắm",
-                "Giải trí",
-                "Sức khỏe",
-                "Giáo dục",
-                "Khác",
-              ],
+              enum: ["Thu nhập", "Ăn uống", "Di chuyển", "Mua sắm", "Giải trí", "Sức khỏe", "Giáo dục", "Khác"],
             },
             items: {
               type: Type.ARRAY,
@@ -1505,48 +1633,139 @@ app.post("/parse", verifySession, async (req, res) => {
                   amount: { type: Type.NUMBER },
                   category: {
                     type: Type.STRING,
-                    description: "The category of this specific item.",
-                    enum: [
-                      "Thu nhập",
-                      "Ăn uống",
-                      "Di chuyển",
-                      "Mua sắm",
-                      "Giải trí",
-                      "Sức khỏe",
-                      "Giáo dục",
-                      "Khác",
-                    ],
+                    enum: ["Thu nhập", "Ăn uống", "Di chuyển", "Mua sắm", "Giải trí", "Sức khỏe", "Giáo dục", "Khác"],
                   },
                 },
               },
             },
           },
           required: ["category", "type"],
-        },
+        };
+        break;
+
+      case 'subscription_payment':
+        processingPrompt = buildSubscriptionPaymentPrompt(subscriptionNames);
+        processingSchema = {
+          type: Type.OBJECT,
+          properties: {
+            serviceName: { type: Type.STRING },
+            amount: { type: Type.NUMBER },
+            category: {
+              type: Type.STRING,
+              enum: ["Giải trí", "Mua sắm", "Sức khỏe", "Giáo dục", "Di chuyển", "Ăn uống", "Khác"],
+            },
+            description: { type: Type.STRING },
+            isSubscriptionPayment: { type: Type.BOOLEAN },
+          },
+          required: ["serviceName", "amount", "category", "description"],
+        };
+        break;
+
+      case 'subscription_creation':
+        processingPrompt = buildSubscriptionCreationPrompt();
+        processingSchema = {
+          type: Type.OBJECT,
+          properties: {
+            name: { type: Type.STRING },
+            pricePerMonth: { type: Type.NUMBER },
+            totalMonths: { type: Type.NUMBER },
+            category: {
+              type: Type.STRING,
+              enum: ["Giải trí", "Mua sắm", "Sức khỏe", "Giáo dục", "Di chuyển", "Ăn uống", "Khác"],
+            },
+            description: { type: Type.STRING },
+            paidAmount: { type: Type.NUMBER },
+            startDate: { type: Type.STRING },
+            isSubscription: { type: Type.BOOLEAN },
+          },
+          required: ["name", "pricePerMonth", "totalMonths", "category", "startDate"],
+        };
+        break;
+
+      case 'installment_plan':
+        processingPrompt = buildInstallmentPrompt();
+        processingSchema = {
+          type: Type.OBJECT,
+          properties: {
+            name: { type: Type.STRING },
+            pricePerMonth: { type: Type.NUMBER },
+            totalMonths: { type: Type.NUMBER },
+            category: {
+              type: Type.STRING,
+              enum: ["Giải trí", "Mua sắm", "Sức khỏe", "Giáo dục", "Di chuyển", "Ăn uống", "Khác"],
+            },
+            description: { type: Type.STRING },
+            paidAmount: { type: Type.NUMBER },
+            totalAmount: { type: Type.NUMBER },
+            startDate: { type: Type.STRING },
+            isInstallment: { type: Type.BOOLEAN },
+            isSubscription: { type: Type.BOOLEAN },
+          },
+          required: ["name", "pricePerMonth", "totalMonths", "category", "paidAmount", "startDate"],
+        };
+        break;
+    }
+
+    const processingContents = [{ role: "user", parts: [{ text: processingPrompt }] }];
+    if (ocrText) processingContents[0].parts.push({ text: `\n\nText: "${ocrText}"` });
+    if (imageBase64) processingContents[0].parts.push({ inlineData: { mimeType, data: imageBase64 } });
+
+    const processingResponse = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: processingContents,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: processingSchema,
       },
     });
 
-    // response may contain parsed object or a text string. Parse safely.
     let data;
-    if (response && response.parsed) {
-      data = response.parsed;
-      console.log('[/parse] Gemini response.parsed:', JSON.stringify(data, null, 2));
-    } else if (response && typeof response.text === 'string') {
-      try {
-        data = JSON.parse(response.text);
-        console.log('[/parse] Gemini response.text parsed:', JSON.stringify(data, null, 2));
-      } catch (parseErr) {
-        console.error('Failed to JSON.parse response.text:', parseErr);
-        console.error('Raw response:', response);
-        // Fallback to return the raw response so client can inspect
-        data = { raw: response };
-      }
+    if (processingResponse && processingResponse.parsed) {
+      data = processingResponse.parsed;
+    } else if (processingResponse && typeof processingResponse.text === 'string') {
+      data = JSON.parse(processingResponse.text);
     } else {
-      // If neither parsed nor text exists, return the response object as-is
-      data = response ?? { message: 'No response from model' };
+      return res.status(500).json({ error: 'Failed to process input' });
     }
 
-    // Fallback: Convert English categories to Vietnamese if AI still returns English
+    console.log('[/parse] Processing result:', JSON.stringify(data, null, 2));
+
+    // Handle different types
+    if (inputType === 'subscription_payment') {
+      // Return subscription payment data
+      const result = {
+        serviceName: data.name || data.merchant,
+        amount: data.pricePerMonth || data.total,
+        category: data.category,
+        description: data.description,
+        isSubscriptionPayment: true
+      };
+      console.log('[/parse] Returning subscription payment:', result);
+      return res.json(result);
+    }
+
+    if (inputType === 'subscription_creation' || inputType === 'installment_plan') {
+      // Return subscription/installment data
+      const result = {
+        name: data.name || 'Unknown',
+        pricePerMonth: data.pricePerMonth || 0,
+        totalMonths: data.totalMonths || 12,
+        category: data.category || 'Khác',
+        description: data.description || (inputType === 'installment_plan' 
+          ? `${data.name} trả góp ${data.totalMonths} tháng${data.paidAmount ? `, đã trả trước ${(data.paidAmount/1000000).toFixed(1)} triệu` : ''}`
+          : `Dịch vụ ${data.name}`),
+        paidAmount: data.paidAmount || 0,
+        totalAmount: data.totalAmount || ((data.paidAmount || 0) + ((data.pricePerMonth || 0) * (data.totalMonths || 12))),
+        startDate: data.startDate || new Date().toISOString().split('T')[0],
+        isInstallment: inputType === 'installment_plan',
+        isSubscription: true
+      };
+      console.log('[/parse] Returning subscription/installment:', result);
+      return res.json(result);
+    }
+
+    // Default: transaction
+    // Fallback: Convert English categories to Vietnamese if needed
     const categoryMap = {
       'Income': 'Thu nhập',
       'Salary': 'Thu nhập',
@@ -1560,40 +1779,39 @@ app.post("/parse", verifySession, async (req, res) => {
       'Utilities': 'Khác'
     };
     
-    // Convert overall category
     if (data.category && categoryMap[data.category]) {
-      console.warn(`[/parse] Converting English category "${data.category}" to Vietnamese "${categoryMap[data.category]}"`);
       data.category = categoryMap[data.category];
     }
     
-    // Convert item categories
     if (Array.isArray(data.items)) {
       data.items.forEach((item) => {
         if (item.category && categoryMap[item.category]) {
-          console.warn(`[/parse] Converting item English category "${item.category}" to Vietnamese "${categoryMap[item.category]}"`);
           item.category = categoryMap[item.category];
         }
       });
     }
 
-    // Ensure category field exists in response
+    // Ensure category field exists
     if (!data.category && data.items && data.items.length > 0) {
-      console.warn('[/parse] WARNING: AI did not return overall category, will use item categories to determine');
-      // Fallback: determine category from items if AI didn't provide one
       const categoryCounts = {};
       data.items.forEach((item) => {
         if (item.category) {
           categoryCounts[item.category] = (categoryCounts[item.category] || 0) + 1;
         }
       });
-      // Pick the most frequent category
-      const dominantCategory = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Khác';
-      data.category = dominantCategory;
-      console.log('[/parse] Auto-determined category from items:', dominantCategory);
+      data.category = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Khác';
     }
 
-    console.log('[/parse] Final response being sent to client:', JSON.stringify(data, null, 2));
-    res.json(data);
+    // Return transaction data
+    const result = {
+      merchant: data.merchant,
+      total: data.total,
+      type: data.transactionType || data.type || 'expense',
+      category: data.category,
+      items: data.items || []
+    };
+    console.log('[/parse] Returning transaction:', result);
+    res.json(result);
   } catch (err) {
     console.error('Error in /parse handler:', err);
     // Provide more context in the error response to help debugging locally

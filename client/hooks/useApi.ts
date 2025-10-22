@@ -61,6 +61,10 @@ export interface GeminiTransactionResponse {
   // Subscription payment properties when isSubscriptionPayment is true
   isSubscriptionPayment?: boolean;
   serviceName?: string;
+  // Installment plan properties
+  paidAmount?: number; // Upfront payment amount for installment plans
+  totalAmount?: number; // Total amount for installment plans (upfront + remaining)
+  isInstallment?: boolean; // Whether this is an installment plan
 }
 
 export interface Subscription {

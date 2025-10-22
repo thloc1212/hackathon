@@ -68,7 +68,9 @@ export default function SubscriptionCreationModal({
         pricePerMonth: initialData.pricePerMonth,
         totalMonths: initialData.totalMonths,
         category: initialData.category,
-        description: initialData.description
+        description: initialData.description,
+        paidAmount: initialData.paidAmount, // LOG THIS TO SEE IF IT'S BEING RECEIVED
+        startDate: initialData.startDate
       });
       setName(initialData.name || '');
       setPricePerMonth(initialData.pricePerMonth?.toString() || '');
